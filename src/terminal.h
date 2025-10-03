@@ -130,12 +130,12 @@ void TerminalStartNewLine(Terminal *terminal) {
         // fprintf(stderr, "current line offset is: %u, and the line is `%s`\n",
         //         terminal->line_offset, terminal->input.buffer + terminal->line_offset);
         terminal->line_offset = terminal->input.len;
-        printf("..| ");
+        fputs("..| ", stdout);
         TerminalPutIndentation(terminal);
     } else {
         StringReset(&terminal->input);
         terminal->line_offset = 0;
-        printf("%s", ">>> ");
+        fputs(">>> ", stdout);
     }
 }
 

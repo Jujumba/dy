@@ -98,7 +98,7 @@ void StringAddIndentation(String *this, u32 indentation) {
             StringAppendRaw(this, INDENTATION3, 12);
             break;
         case 4:
-            StringAppendRaw(this, INDENTATION3, 16);
+            StringAppendRaw(this, INDENTATION4, 16);
             break;
         default: {
             String indentation_string = GenerateIndentation(indentation);

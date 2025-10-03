@@ -38,8 +38,7 @@ int main(void) {
     PyObject *globals, *locals;
     Terminal terminal = TerminalSetup();
 
-    const char* prompt = PROMPT_NEW_STATEMENT;
-    printf("%s", prompt);
+    fputs(PROMPT_NEW_STATEMENT, stdout);
     while (1) {
         if(!TerminalInput(&terminal) ) {
             TerminalRender();
@@ -47,16 +46,10 @@ int main(void) {
         }
         /* TODO: lex and highlight input in real time here */
         if (StringPeek(&terminal.input) != '\n' ) goto next;
-        fprintf(stderr, "line offset: %d, line.len = %d\n", terminal.line_offset, terminal.input.len);
         String current_line = StringSliceLeft(&terminal.input, terminal.line_offset);
-        fprintf(stderr, "current line is `%s`\n", current_line.buffer);
         if (StringIsSpace(&current_line)) {
-            if (terminal.indentation) terminal.indentation -= 1;
-            if (terminal.indentation == 0) {
-                goto execute;
-            } else {
-                goto new_line;
-            }
+            if (terminal.indentation) terminal.indentation = 0;
+            goto execute;
         }
 
         if (current_line.buffer[current_line.len - 2] == ':') {
