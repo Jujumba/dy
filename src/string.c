@@ -2,6 +2,7 @@
 #include "core.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <math.h>
 #include <memory.h>
 #include <stdbool.h>
@@ -21,15 +22,15 @@ typedef struct String {
 String StringNew(void) {
     u32 cap = 4096 * 2;
     char *buffer = mmap(0, cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    assert(buffer);
+    assert(buffer && "failed to `mmap` 2 fucking pages, bitch, do you really live like that?");
     // Leave the last char for \0, treat it as unavailable
     return (String){.buffer = buffer, .len = 0, .cap = cap - 1};
 }
 
-void StringAppendChar(String *this, char c) {
-    assert(this->len < this->cap - 1);
-    this->buffer[this->len] = c;
-    this->len += 1;
+String StringSliceLeft(String *this, u32 offset) {
+    assert(offset <= this->len);
+    return (String){
+        .buffer = this->buffer + offset, .len = this->len - offset, .cap = this->cap - offset};
 }
 
 void StringAppend(String *this, String *other) {
@@ -38,16 +39,28 @@ void StringAppend(String *this, String *other) {
     this->len += other->len;
 }
 
+void StringAppendChar(String *this, char c) {
+    assert(this->len < this->cap - 1);
+    this->buffer[this->len] = c;
+    this->len += 1;
+}
+
 void StringAppendRaw(String *this, char *other, u32 other_len) {
     assert(this->len + other_len <= this->cap);
     memcpy(this->buffer + this->len, other, other_len);
     this->len += other_len;
 }
 
-void StringReset(String *this) { this->len = 0; }
-bool StringIsEmpty(String *this) { return this->len == 0; }
+void StringReset(String *this) {
+    this->len = 0;
+}
+bool StringIsEmpty(String *this) {
+    return this->len == 0;
+}
 
-void StringFree(String this) { munmap(this.buffer, this.cap + 1); }
+void StringFree(String this) {
+    munmap(this.buffer, this.cap + 1);
+}
 
 static String GenerateIndentation(u32 indentation) {
     const u32 len = indentation * 4;
@@ -55,6 +68,20 @@ static String GenerateIndentation(u32 indentation) {
     char *buffer = mmap(0, cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     for (u32 i = 0; i < len; i += 1) buffer[i] = ' ';
     return (String){.buffer = buffer, .len = len, .cap = cap};
+}
+
+char StringPop(String *this) {
+    char c = '\0';
+    if (this->len > 0) {
+        c = this->buffer[this->len - 1];
+        this->buffer[this->len - 1] = '\0';
+        this->len -= 1;
+    }
+    return c;
+}
+
+char StringPeek(String *this) {
+    return this->len != 0 ? this->buffer[this->len - 1] : '\0';
 }
 
 void StringAddIndentation(String *this, u32 indentation) {
@@ -79,4 +106,13 @@ void StringAddIndentation(String *this, u32 indentation) {
             StringFree(indentation_string);
         } break;
     }
+}
+
+bool StringIsSpace(String *this) {
+    for (u32 i = 0; i < this->len; i += 1) {
+        if (!isspace(this->buffer[i])) {
+            return false;
+        }
+    }
+    return true;
 }

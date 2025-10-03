@@ -3,8 +3,6 @@
 #include <Python.h>
 
 #include <assert.h>
-#include <readline/history.h>
-#include <readline/readline.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +10,7 @@
 
 #include "core.h"
 #include "string.c"
+#include "terminal.h"
 
 #define SUCCESS                   0
 #define PROMPT_NEW_STATEMENT      ">>> "
@@ -37,60 +36,47 @@ int main(void) {
     }
 
     PyObject *globals, *locals;
-    // TODO: implement an arena
-    String current_code = StringNew();
-    unsigned int indentation = 0, current_statement_len = 0;
-    const char *prompt = PROMPT_NEW_STATEMENT;
+    Terminal terminal = TerminalSetup();
 
+    const char* prompt = PROMPT_NEW_STATEMENT;
+    printf("%s", prompt);
     while (1) {
-        line = readline(prompt);
-        if (!line) break;
-        if (*line == '\0') {
-            if (indentation) {
-                /* end of current indentation */
-                indentation -= 1;
-                if (indentation == 0) {
-                    prompt = PROMPT_NEW_STATEMENT;
-                    goto execute;
-                } else {
-                    goto next;
-                }
+        if(!TerminalInput(&terminal) ) {
+            TerminalRender();
+            goto next;
+        }
+        /* TODO: lex and highlight input in real time here */
+        if (StringPeek(&terminal.input) != '\n' ) goto next;
+        fprintf(stderr, "line offset: %d, line.len = %d\n", terminal.line_offset, terminal.input.len);
+        String current_line = StringSliceLeft(&terminal.input, terminal.line_offset);
+        fprintf(stderr, "current line is `%s`\n", current_line.buffer);
+        if (StringIsSpace(&current_line)) {
+            if (terminal.indentation) terminal.indentation -= 1;
+            if (terminal.indentation == 0) {
+                goto execute;
             } else {
-                /* empty line in the global context */
-                break; 
+                goto new_line;
             }
         }
 
-        if (last_char(line) == ':') {
-            StringAddIndentation(&current_code, indentation);
-            indentation += 1;
-            StringAppendRaw(&current_code, line, strlen(line));
-            StringAppendChar(&current_code, '\n');
-            prompt = PROMPT_CONTINUE_STATEMENT;
-            goto next;
+        if (current_line.buffer[current_line.len - 2] == ':') {
+            terminal.indentation += 1;
+            goto new_line;
         }
 
+        if (terminal.indentation) goto new_line;
 
-        if (indentation) {
-            StringAddIndentation(&current_code, indentation);
-            StringAppendRaw(&current_code, line, strlen(line));
-            StringAppendChar(&current_code, '\n');
-            goto next;
-        }
-    
 execute:
-        int execution_status = 0;
-        if (!StringIsEmpty(&current_code)) {
-            printf("%s", current_code.buffer);
-            execution_status = PyRun_SimpleString(current_code.buffer);
-            StringReset(&current_code);
-        } else {
-            execution_status = PyRun_SimpleString(line);
-        }
+        /* remove the new line char */
+        StringPop(&terminal.input);
+
+        PyRun_SimpleString(terminal.input.buffer);
+        
+new_line:
+        TerminalStartNewLine(&terminal);
 
 next:
-        add_history(line);
-        free(line);
+        usleep(1000);
     }
 
     Py_FinalizeEx();
