@@ -53,11 +53,14 @@ static String GenerateIndentation(u32 indentation) {
     const u32 len = indentation * 4;
     const u32 cap = (u32)(ceil(log(len) / log(4096)));
     char *buffer = mmap(0, cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    for (u32 i = 0; i < len; i += 1) buffer[i] = ' ';
     return (String){.buffer = buffer, .len = len, .cap = cap};
 }
 
 void StringAddIndentation(String *this, u32 indentation) {
     switch (indentation) {
+        case 0:
+            break;
         case 1:
             StringAppendRaw(this, INDENTATION1, 4);
             break;

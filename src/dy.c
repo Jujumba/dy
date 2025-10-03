@@ -23,11 +23,6 @@ char last_char(char* string) {
     return string[len - 1];
 }
 
-void append_new_line(char *string, u32 *len) {
-    string[*len] = '\n';
-    *len += 1;
-}
-
 int main(void) {
     char *line;
 
@@ -52,15 +47,22 @@ int main(void) {
         if (!line) break;
         if (*line == '\0') {
             if (indentation) {
+                /* end of current indentation */
                 indentation -= 1;
-                if (indentation == 0) prompt = PROMPT_NEW_STATEMENT;
-                goto execute;
+                if (indentation == 0) {
+                    prompt = PROMPT_NEW_STATEMENT;
+                    goto execute;
+                } else {
+                    goto next;
+                }
             } else {
-                break; // empty line in the global context
+                /* empty line in the global context */
+                break; 
             }
         }
 
         if (last_char(line) == ':') {
+            StringAddIndentation(&current_code, indentation);
             indentation += 1;
             StringAppendRaw(&current_code, line, strlen(line));
             StringAppendChar(&current_code, '\n');
@@ -79,6 +81,7 @@ int main(void) {
 execute:
         int execution_status = 0;
         if (!StringIsEmpty(&current_code)) {
+            printf("%s", current_code.buffer);
             execution_status = PyRun_SimpleString(current_code.buffer);
             StringReset(&current_code);
         } else {
@@ -94,7 +97,8 @@ next:
 
     return 0;
 
-    exception : PyConfig_Clear(&config);
+exception:
+    PyConfig_Clear(&config);
     if (PyStatus_IsExit(pystatus)) {
         return pystatus.exitcode;
     }
