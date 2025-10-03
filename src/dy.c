@@ -42,10 +42,10 @@ int main(void) {
     while (1) {
         if(!TerminalInput(&terminal) ) {
             TerminalRender();
-            goto next;
+            goto timeout;
         }
         /* TODO: lex and highlight input in real time here */
-        if (StringPeek(&terminal.input) != '\n' ) goto next;
+        if (StringPeek(&terminal.input) != '\n' ) continue;
         String current_line = StringSliceLeft(&terminal.input, terminal.line_offset);
         if (StringIsSpace(&current_line)) {
             if (terminal.indentation) terminal.indentation = 0;
@@ -67,8 +67,9 @@ execute:
         
 new_line:
         TerminalStartNewLine(&terminal);
+        continue;
 
-next:
+timeout:
         usleep(1000);
     }
 
