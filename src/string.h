@@ -21,14 +21,6 @@ typedef struct String {
     u32 cap;
 } String;
 
-// String StringNew(void) {
-//     u32 cap = 4096 * 2;
-//     char *buffer = mmap(0, cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-//     assert(buffer && "failed to `mmap` 2 fucking pages, bitch, do you really live like that?");
-//     // Leave the last char for \0, treat it as unavailable
-//     return (String){.buffer = buffer, .len = 0, .cap = cap - 1};
-// }
-
 void StringResize(String* this, Arena *arena) {
     u32 new_cap = 0;
     if (this->cap == 0) new_cap = 4096 * 2; // 2 pages
