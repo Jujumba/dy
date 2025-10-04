@@ -38,6 +38,9 @@
 #define TERM_BACKSPACE '\b'
 #define TERM_ARROW_UP  '\x1bA'
 
+#define TERM_PROMPT_NEW         TERM_STYLE_BOLD TERM_STYLE_BRBLUE  ">>> " TERM_STYLE_RESET
+#define TERM_PROMPT_CONTINUE    TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..| " TERM_STYLE_RESET
+
 typedef struct {
     u32 row, col;
 } TerminalPosition;
@@ -63,13 +66,8 @@ typedef struct {
     /// Terminal input
     String input;
 
-    // EventRing event_ring;
+    TerminalPosition pos;
 
-    /// Saved terminal positions
-    // TerminalPositions positions;
-
-    /// How many lines are in each indentation level,
-    /// indentation level is the index
     LineInfos line_infos;
 } Terminal;
 
@@ -87,7 +85,7 @@ i32 TerminalInput(Terminal *terminal, Arena* arena);
 
 void TerminalStartNewLine(Terminal *terminal, Arena *arena);
 
-void TerminalPutChar(Terminal *terminal, Arena *arena, char c);
+void TermimalInsertCharAtCursor(Terminal *terminal, Arena *arena, char c);
 void TerminalPopChar(Terminal *terminal, Arena *arena);
 void TerminalPutIndentation(Terminal *terminal, Arena *arena);
 void TerminalRender(void);
@@ -96,8 +94,7 @@ void TerminalClearLine(void);
 void TerminalSavePosition(void);
 void TerminalRestorePosition(void);
 void TerminalEnableWrapping(void);
-
-void TerminalPositionSave(Terminal *this, Arena *arena);
+void TerminalResetInput(Terminal *terminal);
 
 void TerminalUpdateDimension(Terminal *terminal) {
     struct winsize window;
@@ -131,14 +128,35 @@ i32 TerminalInput(Terminal *terminal, Arena *arena) {
     if (num_read == 0) return false;
 
     switch (c) {
-        case TERM_EOF:
-            return TERM_STATUS_EOF;
+        case TERM_EOF: return TERM_STATUS_EOF;
 
         case '\r':
         case '\n':
-            TerminalSavePosition();
-            TerminalPutChar(terminal, arena, c);
+            TermimalInsertCharAtCursor(terminal, arena, c);
         break;
+
+        case TERM_ESCAPE_CHAR: {
+            char buffer[2];
+            u32 bytes_read = read(STDIN_FILENO, buffer, 2);
+            if (buffer[0] != '[') break; // not-interesting keycode
+            switch (buffer[1]) {
+                // arrow up
+                case 'A':
+                    break;
+
+                // arrow down
+                case 'B':
+                    break;
+
+                // arrow left
+                case 'D':
+                    break;
+
+                // arrow right
+                case 'C':
+                    break;
+            }
+        } break;
 
         case TERM_DEL:
         case TERM_BACKSPACE:
@@ -147,7 +165,7 @@ i32 TerminalInput(Terminal *terminal, Arena *arena) {
 
         default: 
             if ((isalnum(c) || isspace(c) || ispunct(c))) {
-                TerminalPutChar(terminal, arena, c);
+                TermimalInsertCharAtCursor(terminal, arena, c);
             }
          break;
     }
@@ -174,21 +192,28 @@ void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
     LineInfo new_line_info = {.offset = terminal->input.len, .indentation = terminal->indentation};
 
     LineInfosPush(&terminal->line_infos, arena, new_line_info);
-    fprintf(stderr, "prev line info: offset = %d, indentation = %d\n", new_line_info.offset, new_line_info.indentation);
 
     if (terminal->indentation) {
         terminal->last_line_offset = terminal->input.len;
-        fputs(TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..| " TERM_STYLE_RESET, stdout);
+        fputs(TERM_PROMPT_CONTINUE, stdout);
         TerminalPutIndentation(terminal, arena);
     } else {
         terminal->last_line_offset = 0;
-        fputs(TERM_STYLE_BOLD TERM_STYLE_BRBLUE ">>> " TERM_STYLE_RESET, stdout);
+        fputs(TERM_PROMPT_NEW, stdout);
     }
     fflush(stdout);
 }
 
-void TerminalPutChar(Terminal *terminal, Arena* arena, char c) {
-    StringAppendChar(&terminal->input, arena, c);
+void TermimalInsertCharAtCursor(Terminal *terminal, Arena* arena, char c) {
+    StringInsertChar(&terminal->input, arena, terminal->pos.col + terminal->last_line_offset, c);
+
+    if (c == '\n') {
+        terminal->pos.row += 1;
+        terminal->pos.col = 0;
+    } else {
+        terminal->pos.col += 1;
+    }
+
     putc(c, stdout);
 }
 
@@ -198,8 +223,10 @@ void TerminalPopChar(Terminal *terminal, Arena* arena) {
     char c = StringPeek(&terminal->input);
     /* if this is not the last char in the current line */
     if (c != '\n') {
+        terminal->pos.col -= 1;
         /* this only moves the cursor back */
-        putc(TERM_BACKSPACE, stdout);
+        char backspace = TERM_BACKSPACE;
+        write(STDOUT_FILENO, &backspace, 1);
         TerminalEraseUntilEnd();
     } else {
         StringPop(&terminal->input);
@@ -209,20 +236,22 @@ void TerminalPopChar(Terminal *terminal, Arena* arena) {
         LineInfo this_line_info = LineInfosPop(&terminal->line_infos);
         LineInfo prev_line_info = LineInfosPeek(&terminal->line_infos);
 
+        u32 prev_line_len = this_line_info.offset - prev_line_info.offset;
+
         /* set this line as the current one */
+        terminal->pos.row -= 1;
+        terminal->pos.col = prev_line_len - 1;
         terminal->last_line_offset = prev_line_info.offset;
         terminal->indentation = prev_line_info.indentation;
 
-        u32 prev_line_len = this_line_info.offset - prev_line_info.offset;
         /* 4 for prompt offset */
         printf("%s%s%uG", TERM_GO_ONE_LINE_UP, TERM_ESCAPE"[", 4 + prev_line_len);
-        fflush(stdout);
     }
 }
 
 void TerminalPutIndentation(Terminal *terminal, Arena* arena) {
     // TODO: use `StringAddIndentation` and sync with terminal
-    for (u32 i = 0; i < terminal->indentation * 4; i += 1) TerminalPutChar(terminal, arena, ' ');
+    for (u32 i = 0; i < terminal->indentation * 4; i += 1) TermimalInsertCharAtCursor(terminal, arena, ' ');
 }
 
 void TerminalRender(void) {
@@ -243,4 +272,9 @@ void TerminalRestorePosition(void) {
 }
 void TerminalEnableWrapping(void) {
     printf("%s", TERM_LINE_WRAPPING);
+}
+
+void TerminalResetInput(Terminal *terminal) {
+    StringReset(&terminal->input);
+    LineInfosReset(&terminal->line_infos);
 }

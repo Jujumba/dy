@@ -35,7 +35,6 @@ int main(void) {
         if (status == TERM_STATUS_EOF) break;
 
         String current_line = StringSliceLeft(&terminal.input, terminal.last_line_offset);
-
         if (StringIsSpace(&current_line)) {
             terminal.indentation = 0;
         } else if (current_line.buffer[current_line.len - 2] == ':') {
@@ -51,8 +50,7 @@ execute:
         PyRun_SimpleString(terminal.input.buffer);
 
         ArenaReset(&input_arena);
-        StringReset(&terminal.input);
-        
+        TerminalResetInput(&terminal);
     }
 
     ArenaFree(&input_arena);

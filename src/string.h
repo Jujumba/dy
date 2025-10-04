@@ -71,6 +71,18 @@ void StringAppendRaw(String *this, Arena *arena, char *other, u32 other_len) {
     this->len += other_len;
 }
 
+void StringInsertChar(String *this, Arena *arena, u32 index, char c) {
+    assert(index <= this->len);
+    if (index == this->len) {
+        StringAppendChar(this, arena, c);
+        return;
+    }
+    StringResizeIfNeeded(this, arena);
+    memmove(this->buffer + index + 1, this->buffer + index, this->len - index);
+    this->buffer[index] = c;
+    this->len += 1;
+}
+
 void StringClear(String *this) {
     this->len = 0;
 }

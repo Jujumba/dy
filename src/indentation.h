@@ -24,6 +24,7 @@ void LineInfosPush(LineInfos *this, Arena *arena, LineInfo info);
 LineInfo LineInfosPop(LineInfos *this);
 LineInfo LineInfosPeek(LineInfos *this);
 void LineInfosResizeIfNeeded(LineInfos *this, Arena *arena);
+void LineInfosReset(LineInfos *this);
 
 void LineInfosPush(LineInfos *this, Arena *arena, LineInfo info) {
     LineInfosResizeIfNeeded(this, arena);
@@ -55,4 +56,8 @@ void LineInfosResizeIfNeeded(LineInfos *this, Arena *arena) {
 
     this->ptr = ptr;
     this->cap = new_cap;
+}
+
+void LineInfosReset(LineInfos *this) {
+    *this = (LineInfos){};
 }
