@@ -26,8 +26,13 @@
 #define TERM_STYLE_BRBLUE  TERM_ESCAPE "[94m"
 #define TERM_STYLE_BRBLACK TERM_ESCAPE "[90m"
 
+// Status macros
+#define TERM_STATUS_NONE    0
+#define TERM_STATUS_EOF    -1
+
 // Keycodes
 #define TERM_DEL       0x7F
+#define TERM_EOF       0x4
 #define TERM_BACKSPACE '\b'
 #define TERM_ARROW_UP  '\x1bA'
 
@@ -69,7 +74,9 @@ void TerminalUpdateDimension(Terminal *terminal);
 
 /// Read a single char from `stdin`. This function keeps the internal
 /// input buffer and what gets printed on the screen in sync.
-bool TerminalInput(Terminal *terminal, Arena* arena);
+///
+/// Returns the number of bytes read, or a negative status
+i32 TerminalInput(Terminal *terminal, Arena* arena);
 
 void TerminalStartNewLine(Terminal *terminal, Arena *arena);
 
@@ -108,39 +115,54 @@ Terminal TerminalSetup(void) {
     return terminal;
 }
 
-bool TerminalInput(Terminal *terminal, Arena *arena) {
+// TODO: UTF-8 support
+i32 TerminalInput(Terminal *terminal, Arena *arena) {
     char c;
-    bool read_any = read(STDIN_FILENO, &c, 1);
-    if (!read_any) return false;
+    i32 num_read = read(STDIN_FILENO, &c, 1);
+    if (num_read == 0) return false;
 
     switch (c) {
+        case TERM_EOF:
+            return TERM_STATUS_EOF;
+
         case '\r':
-        case '\n': {
+        case '\n':
             TerminalSavePosition();
             TerminalPutChar(terminal, arena, c);
+        break;
 
-        } break;
-
+        case TERM_DEL:
         case TERM_BACKSPACE:
-        case TERM_DEL: {
             TerminalPopChar(terminal);
-        } break;
+        break;
 
-        default: {
+        default: 
             if ((isalnum(c) || isspace(c) || ispunct(c))) {
-                StringAppendChar(&terminal->input, arena, c);
-                putc(c, stdout);
+                TerminalPutChar(terminal, arena, c);
             }
-        } break;
+         break;
     }
 
     return true;
 }
 
+// TODO: in the future this should get refactored
+//       to allow lexing and syntax highlighting
+i32 TerminalReadLine(Terminal *terminal, Arena *arena) {
+    while (StringPeek(&terminal->input) != '\n') {
+        i32 num_read = TerminalInput(terminal, arena);
+        TerminalRender();
+        if (num_read == TERM_STATUS_EOF) {
+            // cursor is at the current line, move it down
+            putc('\n', stdout);
+            return TERM_STATUS_EOF;
+        }
+        if (num_read == TERM_STATUS_NONE) usleep(500);
+    }
+}
+
 void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
     if (terminal->indentation) {
-        // fprintf(stderr, "current line offset is: %u, and the line is `%s`\n",
-        //         terminal->line_offset, terminal->input.buffer + terminal->line_offset);
         terminal->last_line_offset = terminal->input.len;
         fputs(TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..| " TERM_STYLE_RESET, stdout);
         TerminalPutIndentation(terminal, arena);

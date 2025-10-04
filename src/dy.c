@@ -14,13 +14,11 @@
 #include "arena.h"
 
 int main(void) {
-    char *line;
-
     PyStatus pystatus;
     PyConfig config;
     PyConfig_InitPythonConfig(&config);
-    config.isolated = 1;
 
+    config.isolated = 1;
     pystatus = Py_InitializeFromConfig(&config);
     if (PyStatus_Exception(pystatus)) {
         goto exception;
@@ -34,11 +32,8 @@ int main(void) {
         TerminalStartNewLine(&terminal, &input_arena);
 
         // read the input until we hit the last line
-        while (StringPeek(&terminal.input) != '\n') {
-            bool read_any = TerminalInput(&terminal, &input_arena);
-            TerminalRender();
-            if (!read_any) usleep(500);
-        }
+        i32 status = TerminalReadLine(&terminal, &input_arena);
+        if (status == TERM_STATUS_EOF) break;
 
         String current_line = StringSliceLeft(&terminal.input, terminal.last_line_offset);
         if (StringIsSpace(&current_line)) {
@@ -57,8 +52,8 @@ execute:
         /* remove the new line char */
         StringPop(&terminal.input);
 
-
         PyRun_SimpleString(terminal.input.buffer);
+
         ArenaReset(&input_arena);
         StringReset(&terminal.input);
         
