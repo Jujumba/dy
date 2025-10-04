@@ -95,6 +95,7 @@ void TerminalSavePosition(void);
 void TerminalRestorePosition(void);
 void TerminalEnableWrapping(void);
 void TerminalResetInput(Terminal *terminal);
+void TerminalCursorMoveToColumn(u32 column);
 
 void TerminalUpdateDimension(Terminal *terminal) {
     struct winsize window;
@@ -150,6 +151,10 @@ i32 TerminalInput(Terminal *terminal, Arena *arena) {
 
                 // arrow left
                 case 'D':
+                    if (terminal->pos.col > 1) {
+                        putc('\b', stdout);
+                        terminal->pos.col -= 1;
+                    }
                     break;
 
                 // arrow right
@@ -205,16 +210,24 @@ void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
 }
 
 void TermimalInsertCharAtCursor(Terminal *terminal, Arena* arena, char c) {
-    StringInsertChar(&terminal->input, arena, terminal->pos.col + terminal->last_line_offset, c);
-
+    u32 line_offset = terminal->pos.col + terminal->last_line_offset;
     if (c == '\n') {
+        TerminalEraseUntilEnd();
+        printf("%s\n", terminal->input.buffer + line_offset);
+        StringAppendChar(&terminal->input, arena, c);
         terminal->pos.row += 1;
         terminal->pos.col = 0;
-    } else {
-        terminal->pos.col += 1;
-    }
+        return;
+    } 
 
-    putc(c, stdout);
+    StringInsertChar(&terminal->input, arena, line_offset, c);
+    TerminalEraseUntilEnd();
+    printf("%s", terminal->input.buffer + line_offset);
+    fflush(stdout);
+
+    terminal->pos.col += 1;
+    TerminalCursorMoveToColumn(terminal->pos.col + 4 + 1);
+
 }
 
 void TerminalPopChar(Terminal *terminal, Arena* arena) {
@@ -277,4 +290,8 @@ void TerminalEnableWrapping(void) {
 void TerminalResetInput(Terminal *terminal) {
     StringReset(&terminal->input);
     LineInfosReset(&terminal->line_infos);
+}
+
+void TerminalCursorMoveToColumn(u32 column) {
+    printf("%s[%uG", TERM_ESCAPE, column);
 }

@@ -88,6 +88,7 @@ void StringClear(String *this) {
 }
 
 void StringReset(String *this) {
+    memset(this->buffer, 0, this->cap);
     this->len = 0;
     this->cap = 0;
 }
