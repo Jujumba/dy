@@ -10,6 +10,7 @@
 #include "core.h"
 #include "string.h"
 #include "arena.h"
+#include "indentation.h"
 
 #define TERM_ESCAPE           "\x1b"
 #define TERM_ESCAPE_CHAR      '\x1b'
@@ -19,6 +20,7 @@
 #define TERM_ERASE_UNTIL_END  TERM_ESCAPE "[0J"
 #define TERM_REQUEST_POSITION TERM_ESCAPE "[6n"
 #define TERM_LINE_WRAPPING    TERM_ESCAPE "[?7l"
+#define TERM_GO_ONE_LINE_UP   TERM_ESCAPE "[1A"
 
 #define TERM_STYLE_RESET   TERM_ESCAPE "[0m"
 #define TERM_STYLE_BOLD    TERM_ESCAPE "[1m"
@@ -39,6 +41,11 @@
 typedef struct {
     u32 row, col;
 } TerminalPosition;
+
+typedef struct TerminalPositions {
+    TerminalPosition* ptr;
+    u32 len, cap;
+} TerminalPositions;
 
 typedef struct {
     struct termios handle;
@@ -63,7 +70,7 @@ typedef struct {
 
     /// How many lines are in each indentation level,
     /// indentation level is the index
-    u32 *indentation_lines;
+    LineInfos line_infos;
 } Terminal;
 
 /// Initialize the terminal
@@ -81,7 +88,7 @@ i32 TerminalInput(Terminal *terminal, Arena* arena);
 void TerminalStartNewLine(Terminal *terminal, Arena *arena);
 
 void TerminalPutChar(Terminal *terminal, Arena *arena, char c);
-void TerminalPopChar(Terminal *terminal);
+void TerminalPopChar(Terminal *terminal, Arena *arena);
 void TerminalPutIndentation(Terminal *terminal, Arena *arena);
 void TerminalRender(void);
 void TerminalEraseUntilEnd(void);
@@ -89,6 +96,8 @@ void TerminalClearLine(void);
 void TerminalSavePosition(void);
 void TerminalRestorePosition(void);
 void TerminalEnableWrapping(void);
+
+void TerminalPositionSave(Terminal *this, Arena *arena);
 
 void TerminalUpdateDimension(Terminal *terminal) {
     struct winsize window;
@@ -133,7 +142,7 @@ i32 TerminalInput(Terminal *terminal, Arena *arena) {
 
         case TERM_DEL:
         case TERM_BACKSPACE:
-            TerminalPopChar(terminal);
+            TerminalPopChar(terminal, arena);
         break;
 
         default: 
@@ -162,6 +171,11 @@ i32 TerminalReadLine(Terminal *terminal, Arena *arena) {
 }
 
 void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
+    LineInfo new_line_info = {.offset = terminal->input.len, .indentation = terminal->indentation};
+
+    LineInfosPush(&terminal->line_infos, arena, new_line_info);
+    fprintf(stderr, "prev line info: offset = %d, indentation = %d\n", new_line_info.offset, new_line_info.indentation);
+
     if (terminal->indentation) {
         terminal->last_line_offset = terminal->input.len;
         fputs(TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..| " TERM_STYLE_RESET, stdout);
@@ -170,6 +184,7 @@ void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
         terminal->last_line_offset = 0;
         fputs(TERM_STYLE_BOLD TERM_STYLE_BRBLUE ">>> " TERM_STYLE_RESET, stdout);
     }
+    fflush(stdout);
 }
 
 void TerminalPutChar(Terminal *terminal, Arena* arena, char c) {
@@ -177,18 +192,31 @@ void TerminalPutChar(Terminal *terminal, Arena* arena, char c) {
     putc(c, stdout);
 }
 
-void TerminalPopChar(Terminal *terminal) {
+void TerminalPopChar(Terminal *terminal, Arena* arena) {
     if (StringIsEmpty(&terminal->input)) return;
-    char c = StringPop(&terminal->input);
+    StringPop(&terminal->input);
+    char c = StringPeek(&terminal->input);
     /* if this is not the last char in the current line */
     if (c != '\n') {
         /* this only moves the cursor back */
         putc(TERM_BACKSPACE, stdout);
         TerminalEraseUntilEnd();
     } else {
-        /* before going one line down, position of the end of the prev. line was saved */
+        StringPop(&terminal->input);
+        /* going one line up */
         TerminalClearLine();
-        TerminalRestorePosition();
+        /* info of the line we are currently in (the one to be deleted) */
+        LineInfo this_line_info = LineInfosPop(&terminal->line_infos);
+        LineInfo prev_line_info = LineInfosPeek(&terminal->line_infos);
+
+        /* set this line as the current one */
+        terminal->last_line_offset = prev_line_info.offset;
+        terminal->indentation = prev_line_info.indentation;
+
+        u32 prev_line_len = this_line_info.offset - prev_line_info.offset;
+        /* 4 for prompt offset */
+        printf("%s%s%uG", TERM_GO_ONE_LINE_UP, TERM_ESCAPE"[", 4 + prev_line_len);
+        fflush(stdout);
     }
 }
 

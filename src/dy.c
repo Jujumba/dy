@@ -24,26 +24,22 @@ int main(void) {
         goto exception;
     }
 
-    PyObject *globals, *locals;
     Arena input_arena = ArenaNew();
     Terminal terminal = TerminalSetup();
 
     while (1) {
         TerminalStartNewLine(&terminal, &input_arena);
 
-        // read the input until we hit the last line
+        // read line
         i32 status = TerminalReadLine(&terminal, &input_arena);
         if (status == TERM_STATUS_EOF) break;
 
         String current_line = StringSliceLeft(&terminal.input, terminal.last_line_offset);
-        if (StringIsSpace(&current_line)) {
-            if (terminal.indentation) terminal.indentation = 0;
-            goto execute;
-        }
 
-        if (current_line.buffer[current_line.len - 2] == ':') {
+        if (StringIsSpace(&current_line)) {
+            terminal.indentation = 0;
+        } else if (current_line.buffer[current_line.len - 2] == ':') {
             terminal.indentation += 1;
-            continue;
         }
 
         if (terminal.indentation) continue;
