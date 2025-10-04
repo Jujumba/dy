@@ -8,8 +8,8 @@
 #include <unistd.h>
 
 #include "core.h"
-#include "event.h"
-#include "string.c"
+#include "string.h"
+#include "arena.h"
 
 #define TERM_ESCAPE           "\x1b"
 #define TERM_ESCAPE_CHAR      '\x1b'
@@ -20,33 +20,45 @@
 #define TERM_REQUEST_POSITION TERM_ESCAPE "[6n"
 #define TERM_LINE_WRAPPING    TERM_ESCAPE "[?7l"
 
-#define TERM_STYLE_RESET TERM_ESCAPE "[0m"
-#define TERM_STYLE_BOLD  TERM_ESCAPE "[1m"
-#define TERM_STYLE_CYAN  TERM_ESCAPE "[36m"
+#define TERM_STYLE_RESET   TERM_ESCAPE "[0m"
+#define TERM_STYLE_BOLD    TERM_ESCAPE "[1m"
+#define TERM_STYLE_CYAN    TERM_ESCAPE "[36m"
+#define TERM_STYLE_BRBLUE  TERM_ESCAPE "[94m"
+#define TERM_STYLE_BRBLACK TERM_ESCAPE "[90m"
 
 // Keycodes
 #define TERM_DEL       0x7F
 #define TERM_BACKSPACE '\b'
 #define TERM_ARROW_UP  '\x1bA'
 
-// Internal macros
-#define __TERMINAL_POSITIONS_BUFFER_SIZE 10
-
 typedef struct {
     u32 row, col;
 } TerminalPosition;
 
 typedef struct {
-    TerminalPosition buffer[__TERMINAL_POSITIONS_BUFFER_SIZE];
-    u32 head;
-} TerminalPositions;
-
-typedef struct {
     struct termios handle;
-    u32 width, height, indentation, line_offset;
+
+    /// Dimension of the terminal
+    u32 width, height;
+
+    /// Current level of indentation,
+    /// if multiline input
+    u32 indentation;
+
+    /// Offset in the last line in multiline
+    u32 last_line_offset;
+
+    /// Terminal input
     String input;
+
     // EventRing event_ring;
-    TerminalPositions positions;
+
+    /// Saved terminal positions
+    // TerminalPositions positions;
+
+    /// How many lines are in each indentation level,
+    /// indentation level is the index
+    u32 *indentation_lines;
 } Terminal;
 
 /// Initialize the terminal
@@ -57,13 +69,13 @@ void TerminalUpdateDimension(Terminal *terminal);
 
 /// Read a single char from `stdin`. This function keeps the internal
 /// input buffer and what gets printed on the screen in sync.
-bool TerminalInput(Terminal *terminal);
+bool TerminalInput(Terminal *terminal, Arena* arena);
 
-void TerminalStartNewLine(Terminal *terminal);
+void TerminalStartNewLine(Terminal *terminal, Arena *arena);
 
-void TerminalPutChar(Terminal *terminal, char c);
+void TerminalPutChar(Terminal *terminal, Arena *arena, char c);
 void TerminalPopChar(Terminal *terminal);
-void TerminalPutIndentation(Terminal *terminal);
+void TerminalPutIndentation(Terminal *terminal, Arena *arena);
 void TerminalRender(void);
 void TerminalEraseUntilEnd(void);
 void TerminalClearLine(void);
@@ -91,12 +103,12 @@ Terminal TerminalSetup(void) {
     handle.c_cc[VTIME] = 0;
 
     tcsetattr(STDIN_FILENO, TCSANOW, &handle);
-    Terminal terminal = {.handle = handle, .input = StringNew()};
+    Terminal terminal = { .handle = handle, };
     TerminalUpdateDimension(&terminal);
     return terminal;
 }
 
-bool TerminalInput(Terminal *terminal) {
+bool TerminalInput(Terminal *terminal, Arena *arena) {
     char c;
     bool read_any = read(STDIN_FILENO, &c, 1);
     if (!read_any) return false;
@@ -105,7 +117,7 @@ bool TerminalInput(Terminal *terminal) {
         case '\r':
         case '\n': {
             TerminalSavePosition();
-            TerminalPutChar(terminal, c);
+            TerminalPutChar(terminal, arena, c);
 
         } break;
 
@@ -116,7 +128,7 @@ bool TerminalInput(Terminal *terminal) {
 
         default: {
             if ((isalnum(c) || isspace(c) || ispunct(c))) {
-                StringAppendChar(&terminal->input, c);
+                StringAppendChar(&terminal->input, arena, c);
                 putc(c, stdout);
             }
         } break;
@@ -125,22 +137,21 @@ bool TerminalInput(Terminal *terminal) {
     return true;
 }
 
-void TerminalStartNewLine(Terminal *terminal) {
+void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
     if (terminal->indentation) {
         // fprintf(stderr, "current line offset is: %u, and the line is `%s`\n",
         //         terminal->line_offset, terminal->input.buffer + terminal->line_offset);
-        terminal->line_offset = terminal->input.len;
-        fputs("..| ", stdout);
-        TerminalPutIndentation(terminal);
+        terminal->last_line_offset = terminal->input.len;
+        fputs(TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..| " TERM_STYLE_RESET, stdout);
+        TerminalPutIndentation(terminal, arena);
     } else {
-        StringReset(&terminal->input);
-        terminal->line_offset = 0;
-        fputs(">>> ", stdout);
+        terminal->last_line_offset = 0;
+        fputs(TERM_STYLE_BOLD TERM_STYLE_BRBLUE ">>> " TERM_STYLE_RESET, stdout);
     }
 }
 
-void TerminalPutChar(Terminal *terminal, char c) {
-    StringAppendChar(&terminal->input, c);
+void TerminalPutChar(Terminal *terminal, Arena* arena, char c) {
+    StringAppendChar(&terminal->input, arena, c);
     putc(c, stdout);
 }
 
@@ -159,9 +170,9 @@ void TerminalPopChar(Terminal *terminal) {
     }
 }
 
-void TerminalPutIndentation(Terminal *terminal) {
+void TerminalPutIndentation(Terminal *terminal, Arena* arena) {
     // TODO: use `StringAddIndentation` and sync with terminal
-    for (u32 i = 0; i < terminal->indentation * 4; i += 1) TerminalPutChar(terminal, ' ');
+    for (u32 i = 0; i < terminal->indentation * 4; i += 1) TerminalPutChar(terminal, arena, ' ');
 }
 
 void TerminalRender(void) {

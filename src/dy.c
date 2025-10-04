@@ -1,4 +1,4 @@
-/// *Must* be included before standard headers
+// *Must* be included before standard headers
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
@@ -9,18 +9,9 @@
 #include <string.h>
 
 #include "core.h"
-#include "string.c"
+#include "string.h"
 #include "terminal.h"
-
-#define SUCCESS                   0
-#define PROMPT_NEW_STATEMENT      ">>> "
-#define PROMPT_CONTINUE_STATEMENT "..| "
-
-char last_char(char* string) {
-    ssize_t len = strlen(string);
-    assert(len != 0);
-    return string[len - 1];
-}
+#include "arena.h"
 
 int main(void) {
     char *line;
@@ -36,17 +27,20 @@ int main(void) {
     }
 
     PyObject *globals, *locals;
+    Arena input_arena = ArenaNew();
     Terminal terminal = TerminalSetup();
 
-    fputs(PROMPT_NEW_STATEMENT, stdout);
     while (1) {
-        if(!TerminalInput(&terminal) ) {
+        TerminalStartNewLine(&terminal, &input_arena);
+
+        // read the input until we hit the last line
+        while (StringPeek(&terminal.input) != '\n') {
+            bool read_any = TerminalInput(&terminal, &input_arena);
             TerminalRender();
-            goto timeout;
+            if (!read_any) usleep(500);
         }
-        /* TODO: lex and highlight input in real time here */
-        if (StringPeek(&terminal.input) != '\n' ) continue;
-        String current_line = StringSliceLeft(&terminal.input, terminal.line_offset);
+
+        String current_line = StringSliceLeft(&terminal.input, terminal.last_line_offset);
         if (StringIsSpace(&current_line)) {
             if (terminal.indentation) terminal.indentation = 0;
             goto execute;
@@ -54,25 +48,23 @@ int main(void) {
 
         if (current_line.buffer[current_line.len - 2] == ':') {
             terminal.indentation += 1;
-            goto new_line;
+            continue;
         }
 
-        if (terminal.indentation) goto new_line;
+        if (terminal.indentation) continue;
 
 execute:
         /* remove the new line char */
         StringPop(&terminal.input);
 
-        PyRun_SimpleString(terminal.input.buffer);
-        
-new_line:
-        TerminalStartNewLine(&terminal);
-        continue;
 
-timeout:
-        usleep(1000);
+        PyRun_SimpleString(terminal.input.buffer);
+        ArenaReset(&input_arena);
+        StringReset(&terminal.input);
+        
     }
 
+    ArenaFree(&input_arena);
     Py_FinalizeEx();
 
     return 0;
