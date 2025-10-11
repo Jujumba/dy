@@ -4,14 +4,11 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
+#include "arena.h"
 #include "core.h"
 #include "string.h"
 #include "terminal.h"
-#include "arena.h"
 
 int main(void) {
     PyStatus pystatus;
@@ -34,16 +31,15 @@ int main(void) {
         i32 status = TerminalReadLine(&terminal, &input_arena);
         if (status == TERM_STATUS_EOF) break;
 
-        String current_line = StringSliceLeft(&terminal.input, terminal.last_line_offset);
+        String current_line = TerminalGetPreviousLine(&terminal);
         if (StringIsSpace(&current_line)) {
             terminal.indentation = 0;
-        } else if (current_line.buffer[current_line.len - 2] == ':') {
+        } else if (current_line.buffer[current_line.len - 1] == ':') {
             terminal.indentation += 1;
         }
 
         if (terminal.indentation) continue;
 
-execute:
         /* remove the new line char */
         StringPop(&terminal.input);
 

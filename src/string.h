@@ -113,9 +113,29 @@ char StringPop(String *this) {
     return c;
 }
 
+char StringRemoveChar(String *this, u32 index) {
+    assert(index < this->len);
+    if (index == this->len - 1) {
+        return StringPop(this);
+    }
+    char c = this->buffer[index];
+    memmove(this->buffer + index, this->buffer + index + 1, this->len - index);
+    this->len -= 1;
+    return c;
+}
+
 char StringPeek(String *this) {
     return this->len != 0 ? this->buffer[this->len - 1] : '\0';
 }
+
+u32 StringSearchNth(String *this, u32 n, char needle) {
+    u32 idx;
+    for (idx = 0; idx < this->len && n > 0; idx += 1) {
+        if (this->buffer[idx] == needle) n -= 1;
+    }
+    return idx;
+}
+
 
 void StringAddIndentation(String *this, Arena *arena, u32 indentation) {
     switch (indentation) {
@@ -147,4 +167,62 @@ bool StringIsSpace(String *this) {
         }
     }
     return true;
+}
+
+/// Semi-open range [from, this-len)
+String StringSliceFrom(String *this, u32 from) {
+    assert(from <= this->len);
+    return (String){.buffer = this->buffer + from, .len = this->len - from, .cap = this->len - from};
+}
+
+/// Semi-open range [0, to)
+String StringSliceTo(String *this, u32 to) {
+    assert(to <= this->len);
+    return (String){.buffer = this->buffer, .len = to, .cap = to};
+}
+
+/// Semi-open range [from, to)
+String StringSliceFromTo(String *this, u32 from, u32 to) {
+    assert(from <= to && to <= this->len);
+    return (String){.buffer = this->buffer + from, .len = to - from, .cap = to - from};
+}
+
+u32 StringCount(String *this, char needle) {
+    u32 count = 0;
+    for (u32 i = 0; i < this->len; i += 1) {
+        if (this->buffer[i] == needle) count += 1;
+    }
+    return count;
+}
+
+
+
+u32 StringSearchNth_TODO(String *this, u32 n, char needle) {
+    u32 idx;
+    for (idx = 0; idx < this->len; idx += 1) {
+        if (this->buffer[idx] == needle) n -= 1;
+        if (n == 0) return idx;
+    }
+    return idx;
+}
+
+u32 StringLineCount(String *multiline) {
+    u32 num_lines = 0;
+    while (true) {
+        u32 start = StringSearchNth_TODO(multiline, num_lines, '\n');
+        u32 end = StringSearchNth_TODO(multiline, num_lines + 1, '\n');
+        if (end - start > 1) {
+            num_lines += 1;
+        } else {
+            break;
+        }
+    }
+    return num_lines;
+}
+
+String StringNthLine(String *multiline, u32 n) {
+    u32 start = StringSearchNth_TODO(multiline, n, '\n');
+    if (start < multiline->len && multiline->buffer[start] == '\n') start += 1;
+    u32 end = StringSearchNth_TODO(multiline, n + 1, '\n');
+    return StringSliceFromTo(multiline, start, end);
 }

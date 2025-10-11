@@ -5,8 +5,8 @@
 
 /// Information about saved line
 typedef struct LineInfo {
-    /// Offset to this line in the multiline buffer
-    u32 offset;
+    /// Length of the line
+    u32 len;
 
     /// Indentation level, useful to know when
     /// a last line with this indent level got
@@ -59,5 +59,11 @@ void LineInfosResizeIfNeeded(LineInfos *this, Arena *arena) {
 }
 
 void LineInfosReset(LineInfos *this) {
+    memset(this->ptr, 0, this->cap);
     *this = (LineInfos){};
+}
+
+LineInfo LineInfosGet(LineInfos *this, u32 index) {
+    assert(index < this->len);
+    return this->ptr[index];
 }
