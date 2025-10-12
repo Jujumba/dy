@@ -42,8 +42,8 @@
 #define TERM_BACKSPACE '\b'
 #define TERM_ARROW_UP  '\x1bA'
 
-#define TERM_PROMPT_NEW      TERM_STYLE_BOLD TERM_STYLE_BRBLUE ">>> " TERM_STYLE_RESET
-#define TERM_PROMPT_CONTINUE TERM_STYLE_BOLD TERM_STYLE_BRBLACK "... " TERM_STYLE_RESET
+#define TERM_PROMPT_NEW      TERM_STYLE_BOLD TERM_STYLE_BRBLUE ">>>" TERM_STYLE_RESET " "
+#define TERM_PROMPT_CONTINUE TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..." TERM_STYLE_RESET " "
 
 typedef struct {
     u32 row, col;
@@ -59,10 +59,6 @@ typedef struct {
 
     /// Dimension of the terminal
     u32 width, height;
-
-    /// Current level of indentation,
-    /// if multiline input
-    u32 indentation;
 
     /// Terminal input
     String input;
@@ -205,17 +201,16 @@ i32 TerminalReadLine(Terminal *terminal, Arena *arena) {
                 break;
 
             case TERM_STATUS_NONE:
-                // usleep(100);
                 break;
 
             case TERM_STATUS_NEW_LINE: {
                 u32 total_lines = StringCount(&terminal->input, '\n');
-                String last_line = StringNthLine(&terminal->input, terminal->pos.row);
+                String last_line = StringNthLine(&terminal->input, terminal->pos.row - 1);
                 if (terminal->pos.row == total_lines && StringIsSpace(&last_line)) {
                     goto exit;
                 }
            }
-            break;
+           break;
         }
     }
 exit:
@@ -223,29 +218,36 @@ exit:
 }
 
 void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
-    if (terminal->indentation) {
-        fputs(TERM_PROMPT_CONTINUE, stdout);
-        TerminalPutIndentation(terminal, arena);
-    } else {
-        fputs(TERM_PROMPT_NEW, stdout);
-    }
+    fputs(TERM_PROMPT_NEW, stdout);
     fflush(stdout);
 }
 
 void TerminalInsertCharAtCursor(Terminal *terminal, Arena *arena, char c) {
     u32 line_offset = StringSearchNth(&terminal->input, terminal->pos.row, '\n') + terminal->pos.col;
+    String current_line = TerminalGetCursorLine(terminal);
 
     StringInsertChar(&terminal->input, arena, line_offset, c);
 
     terminal->pos.col += 1;
     TerminalReRenderCursorLine(terminal);
     if (c == '\n') {
+        u32 indentation_level = StringIndentationLevel(&current_line);
+        if (!StringIsSpace(&current_line)) {
+            if (StringGetChar(&terminal->input, line_offset - 1) == ':') {
+                indentation_level += 1;
+            }
+            StringInsertIndentation(&terminal->input, arena, line_offset + 1, indentation_level);
+        } 
+
         TerminalReRenderLinesBelowCursor(terminal);
         terminal->pos.row += 1;
-        terminal->pos.col = 0;
+        terminal->pos.col = indentation_level * 4;
         printf("\n");
-        if (line_offset != terminal->input.len - 1)
+        // if this is just a one line experession,
+        // this would add extra indentation
+        if (line_offset != terminal->input.len - 1) {
             TerminalEnsureColumnPosition(terminal);
+        }
     }
 }
 
@@ -254,56 +256,22 @@ void TerminalRemoveCharAtCursor(Terminal *terminal, Arena *arena) {
     if (StringIsEmpty(&terminal->input) || (terminal->pos.row == 0 && terminal->pos.col == 0))
         return;
 
-    u32 new_lines_to_skip = terminal->pos.row;
-    u32 this_line_start = StringSearchNth(&terminal->input, new_lines_to_skip, '\n');
+    u32 line_start = StringSearchNth(&terminal->input, terminal->pos.row, '\n');
+    StringRemoveChar(&terminal->input, line_start + terminal->pos.col - 1);
 
-    if (terminal->pos.col != 0) {
-        /* removing a char inside the string */
-
-        terminal->pos.col -= 1;
-        StringRemoveChar(&terminal->input, this_line_start + terminal->pos.col);
+    if (terminal->pos.col == 0) {
+        u32 prev_line_start = StringSearchNth(&terminal->input, terminal->pos.row - 1, '\n');
+        terminal->pos.col = line_start - prev_line_start - 1;
+        TerminalMoveCursorUp(terminal);
+        /* clear from cursor to the end of the screen */
+        printf("\r\x1b[0J");
         TerminalReRenderCursorLine(terminal);
-        // printf("%c%s", TERM_BACKSPACE, TERM_ERASE_UNTIL_END);
-
-        // u32 this_line_end = StringSearchNth(&terminal->input, new_lines_to_skip + 1, '\n');
-        // String rest_of_this_line =
-        //     StringSliceFromTo(&terminal->input, this_line_start + terminal->pos.col, this_line_end);
-        // printf("%.*s", rest_of_this_line.len, rest_of_this_line.buffer);
-
-        // TerminalEnsureColumnPosition(terminal);
-        return;
-    }
-
-    /*
-     * removing the first char in the line,
-     * which is a pretty convoluted operation:
-     * 1) if this is the first symbol in multiline,
-     *    then you just remove it and move the cursor
-     *    back.
-     * 2) if the line you are removing from isn't
-     *    empty, then you copy rest of the current line
-     *    to the previous one, positioning the cursor
-     *    between them
-     * 3) if it's empty, just move the cursor up
-     */
-    StringRemoveChar(&terminal->input, this_line_start - 1);
-    if (terminal->pos.row != 0) {
-        /* this concatenates current line with the previous one */
-        if (terminal->input.buffer[this_line_start - 2] == ':') terminal->indentation -= 1;
-
-        /* move one line up and get that line */
-        terminal->pos.row -= 1;
-        String line_up = TerminalGetCursorLine(terminal);
-
-        terminal->pos.col = this_line_start - 1;
-        printf("%s%s%.*s", TERM_ERASE_ENTIRE_LINE, TERM_GO_ONE_LINE_UP, line_up.len,
-               line_up.buffer);
-
+        TerminalReRenderLinesBelowCursor(terminal);
     } else {
-        printf("\b%s", TERM_ERASE_UNTIL_END);
+        terminal->pos.col -= 1;
+        TerminalReRenderCursorLine(terminal);
     }
-
-    TerminalEnsureColumnPosition(terminal);
+    
 }
 
 void TerminalMoveCursorUp(Terminal *terminal) {
@@ -334,21 +302,12 @@ void TerminalMoveCursorDown(Terminal *terminal) {
 
 String TerminalGetCursorLine(Terminal *terminal) {
     return StringNthLine(&terminal->input, terminal->pos.row);
-    // u32 current_line_start = StringSearchNth(&terminal->input, terminal->pos.row, '\n');
-    // u32 current_line_end = StringSearchNth(&terminal->input, terminal->pos.row + 1, '\n');
-    // return StringSliceFromTo(&terminal->input, current_line_start, current_line_end);
 }
 
 String TerminalGetPreviousLine(Terminal *terminal) {
     assert(terminal->pos.row > 0);
 
     return StringNthLine(&terminal->input, terminal->pos.row - 1);
-}
-
-void TerminalPutIndentation(Terminal *terminal, Arena *arena) {
-    // TODO: use `StringAddIndentation` and sync with terminal
-    for (u32 i = 0; i < terminal->indentation * 4; i += 1)
-        TerminalInsertCharAtCursor(terminal, arena, ' ');
 }
 
 void TerminalRender(void) {
@@ -403,6 +362,7 @@ void TerminalReRenderCursorLine(Terminal* terminal) {
     String cursor_line = TerminalGetCursorLine(terminal);
     printf("%s\r%s%.*s", TERM_ERASE_ENTIRE_LINE, prompt, cursor_line.len, cursor_line.buffer);
     TerminalEnsureColumnPosition(terminal);
+    TerminalRender();
 }
 
 void TerminalReRenderLinesBelowCursor(Terminal* terminal) {

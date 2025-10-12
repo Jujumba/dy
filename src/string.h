@@ -30,8 +30,10 @@ void StringResize(String* this, Arena *arena) {
 
     // make sure we are in bounds
     assert(this->len < new_cap);
-    // copy the old string
-    memcpy(ptr, this->buffer, this->len);
+    if (this->len != 0) {
+        // copy the old string
+        memcpy(ptr, this->buffer, this->len);
+    }
 
     this->buffer = ptr;
     this->cap = new_cap;
@@ -64,7 +66,8 @@ void StringAppendChar(String *this, Arena* arena, char c) {
     this->len += 1;
 }
 
-void StringAppendRaw(String *this, Arena *arena, char *other, u32 other_len) {
+void StringAppendRaw(String *this, Arena *arena, char *other) {
+    u32 other_len = strlen(other);
     StringResizeIfNeeded(this, arena);
     assert(this->len + other_len <= this->cap);
     memcpy(this->buffer + this->len, other, other_len);
@@ -99,6 +102,8 @@ bool StringIsEmpty(String *this) {
 static String GenerateIndentation(u32 indentation, Arena* arena) {
     u32 len = indentation * 4;
     char* buffer = ArenaAlloc(arena, len);
+    // this's more readable than memset, imo
+    // and any compiler will optimize this out to use memset
     for (u32 i = 0; i < len; i += 1) buffer[i] = ' ';
     return (String){.buffer = buffer, .len = len, .cap = len};
 }
@@ -111,6 +116,11 @@ char StringPop(String *this) {
         this->len -= 1;
     }
     return c;
+}
+
+char StringGetChar(String *this, u32 index) {
+    assert(index < this->len);
+    return this->buffer[index];
 }
 
 char StringRemoveChar(String *this, u32 index) {
@@ -136,26 +146,62 @@ u32 StringSearchNth(String *this, u32 n, char needle) {
     return idx;
 }
 
+void StringInsert(String *this, Arena *arena, u32 index, String *other) {
+    if (other->len == 0) return;
+    if (index == this->len - 1) {
+        StringAppend(this, arena, other);
+        return;
+    }
+    if (this->cap - this->len < other->len) {
+        StringResize(this, arena);
+    }
+    memmove(this->buffer, this->buffer + index + other->len, this->len - index);
+    memcpy(this->buffer + index, other->buffer, other->len);
+    this->len += other->len;
+}
 
-void StringAddIndentation(String *this, Arena *arena, u32 indentation) {
+u32 StringIndentationLevel(String *this) {
+    u32 idx;
+    for (idx = 0; idx < this->len; idx += 1) {
+        if (StringGetChar(this, idx) != ' ') break;
+    }
+    return idx / 4;
+}
+
+void StringInsertRaw(String *this, Arena *arena, u32 index, char* raw) {
+    u32 raw_len = strlen(raw); 
+    if (raw_len == 0) return;
+    if (index == this->len - 1) {
+        StringAppendRaw(this, arena, raw);
+        return;
+    }
+    if (this->cap - this->len < raw_len) {
+        StringResize(this, arena);
+    }
+    memmove(this->buffer, this->buffer + index + raw_len, this->len - index);
+    memcpy(this->buffer + index, raw, raw_len);
+    this->len += raw_len;
+}
+
+void StringInsertIndentation(String *this, Arena *arena, u32 index, u32 indentation) {
     switch (indentation) {
         case 0:
             break;
         case 1:
-            StringAppendRaw(this, arena, INDENTATION1, 4);
+            StringInsertRaw(this, arena, index, INDENTATION1);
             break;
         case 2:
-            StringAppendRaw(this, arena, INDENTATION2, 8);
+            StringInsertRaw(this, arena, index, INDENTATION2);
             break;
         case 3:
-            StringAppendRaw(this, arena, INDENTATION3, 12);
+            StringInsertRaw(this, arena, index, INDENTATION3);
             break;
         case 4:
-            StringAppendRaw(this, arena, INDENTATION4, 16);
+            StringInsertRaw(this, arena, index, INDENTATION4);
             break;
         default: {
             String indentation_string = GenerateIndentation(indentation, arena);
-            StringAppend(this, arena, &indentation_string);
+            StringInsert(this, arena, index, &indentation_string);
         } break;
     }
 }
@@ -199,7 +245,7 @@ u32 StringCount(String *this, char needle) {
 
 u32 StringSearchNth_TODO(String *this, u32 n, char needle) {
     u32 idx;
-    for (idx = 0; idx < this->len; idx += 1) {
+    for (idx = 0; idx < this->len && n != 0; idx += 1) {
         if (this->buffer[idx] == needle) n -= 1;
         if (n == 0) return idx;
     }
@@ -208,10 +254,11 @@ u32 StringSearchNth_TODO(String *this, u32 n, char needle) {
 
 u32 StringLineCount(String *multiline) {
     u32 num_lines = 0;
+    u32 start = 0;
     while (true) {
-        u32 start = StringSearchNth_TODO(multiline, num_lines, '\n');
         u32 end = StringSearchNth_TODO(multiline, num_lines + 1, '\n');
-        if (end - start > 1) {
+        if (start < end && end - start != 1) {
+            start = end;
             num_lines += 1;
         } else {
             break;
@@ -222,7 +269,8 @@ u32 StringLineCount(String *multiline) {
 
 String StringNthLine(String *multiline, u32 n) {
     u32 start = StringSearchNth_TODO(multiline, n, '\n');
-    if (start < multiline->len && multiline->buffer[start] == '\n') start += 1;
+    if (start < multiline->len && multiline->buffer[start] == '\n' && start + 1 < multiline->len) start += 1;
     u32 end = StringSearchNth_TODO(multiline, n + 1, '\n');
+    // if (end != 0 && StringGetChar(multiline, end) == '\n') end -= 1;
     return StringSliceFromTo(multiline, start, end);
 }

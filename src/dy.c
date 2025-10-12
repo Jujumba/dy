@@ -31,17 +31,8 @@ int main(void) {
         i32 status = TerminalReadLine(&terminal, &input_arena);
         if (status == TERM_STATUS_EOF) break;
 
-        String current_line = TerminalGetPreviousLine(&terminal);
-        if (StringIsSpace(&current_line)) {
-            terminal.indentation = 0;
-        } else if (current_line.buffer[current_line.len - 1] == ':') {
-            terminal.indentation += 1;
-        }
-
-        if (terminal.indentation) continue;
-
         /* remove the new line char */
-        StringPop(&terminal.input);
+        // StringPop(&terminal.input);
 
         PyRun_SimpleString(terminal.input.buffer);
 
