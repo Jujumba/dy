@@ -20,8 +20,8 @@ Arena ArenaNew(void) {
 
 // TODO: Aligned alloc
 void* ArenaAlloc(Arena *this, u32 size) {
-    if (this->allocated + size >= this->bound) assert(false && "Arena 4GiB limit exceeded");
-    u8* ptr = this->ptr + this->allocated + size;
+    if (this->allocated + size >= this->bound) assert(false && "Arena 2GiB limit exceeded");
+    u8* ptr = this->ptr + this->allocated;
     this->allocated += size;
     return ptr;
 }
