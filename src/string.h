@@ -155,7 +155,7 @@ void StringInsert(String *this, Arena *arena, u32 index, String *other) {
     if (this->cap - this->len < other->len) {
         StringResize(this, arena);
     }
-    memmove(this->buffer, this->buffer + index + other->len, this->len - index);
+    memmove(this->buffer + index + other->len, this->buffer + index, this->len - index);
     memcpy(this->buffer + index, other->buffer, other->len);
     this->len += other->len;
 }
@@ -170,7 +170,6 @@ u32 StringIndentationLevel(String *this) {
 
 void StringInsertRaw(String *this, Arena *arena, u32 index, char* raw) {
     u32 raw_len = strlen(raw); 
-    if (raw_len == 0) return;
     if (index == this->len - 1) {
         StringAppendRaw(this, arena, raw);
         return;
@@ -178,7 +177,7 @@ void StringInsertRaw(String *this, Arena *arena, u32 index, char* raw) {
     if (this->cap - this->len < raw_len) {
         StringResize(this, arena);
     }
-    memmove(this->buffer, this->buffer + index + raw_len, this->len - index);
+    memmove(this->buffer + index + raw_len, this->buffer + index, this->len - index);
     memcpy(this->buffer + index, raw, raw_len);
     this->len += raw_len;
 }
