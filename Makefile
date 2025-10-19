@@ -1,5 +1,13 @@
-all:
-	cc src/dy.c -o dy $(shell pkg-config --libs --cflags python3-embed) $(shell pkg-config --libs --cflags m)
+CC=cc
+FSANITIZE=-fsanitize=undefined -fsanitize=address
+PYTHON3_EMBED=$(shell pkg-config --libs --cflags python3-embed)
+LIBM=$(shell pkg-config --libs --cflags m)
+
+debug:
+	$(CC) src/dy.c -o dy -g -Wall $(FSANITIZE) $(PYTHON3_EMBED) $(LIBM)
 
 release:
-	cc src/dy.c -o dy -O3 $(shell pkg-config --libs --cflags python3-embed) $(shell pkg-config --libs --cflags m)
+	$(CC) src/dy.c -o dy -O3 -Wall $(FSANITIZE) $(PYTHON3_EMBED) $(LIBM)
+
+all:
+	debug
