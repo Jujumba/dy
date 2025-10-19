@@ -14,35 +14,35 @@
 #include "print.h"
 #include "string.h"
 
-#define TERM_ESCAPE            "\x1b"
-#define TERM_ESCAPE_CHAR       '\x1b'
-#define TERM_CLEAR_LINE        TERM_ESCAPE "[2K"
-#define TERM_SAVE_POSITION     TERM_ESCAPE "[s"
-#define TERM_RESTORE_POSITION  TERM_ESCAPE "[u"
-#define TERM_ERASE_UNTIL_END   TERM_ESCAPE "[0J"
+#define TERM_ESCAPE "\x1b"
+#define TERM_ESCAPE_CHAR '\x1b'
+#define TERM_CLEAR_LINE TERM_ESCAPE "[2K"
+#define TERM_SAVE_POSITION TERM_ESCAPE "[s"
+#define TERM_RESTORE_POSITION TERM_ESCAPE "[u"
+#define TERM_ERASE_UNTIL_END TERM_ESCAPE "[0J"
 #define TERM_ERASE_ENTIRE_LINE TERM_ESCAPE "[2K"
-#define TERM_REQUEST_POSITION  TERM_ESCAPE "[6n"
-#define TERM_LINE_WRAPPING     TERM_ESCAPE "[?7l"
-#define TERM_GO_ONE_LINE_UP    TERM_ESCAPE "[1A"
+#define TERM_REQUEST_POSITION TERM_ESCAPE "[6n"
+#define TERM_LINE_WRAPPING TERM_ESCAPE "[?7l"
+#define TERM_GO_ONE_LINE_UP TERM_ESCAPE "[1A"
 
-#define TERM_STYLE_RESET   TERM_ESCAPE "[0m"
-#define TERM_STYLE_BOLD    TERM_ESCAPE "[1m"
-#define TERM_STYLE_CYAN    TERM_ESCAPE "[36m"
-#define TERM_STYLE_BRBLUE  TERM_ESCAPE "[94m"
+#define TERM_STYLE_RESET TERM_ESCAPE "[0m"
+#define TERM_STYLE_BOLD TERM_ESCAPE "[1m"
+#define TERM_STYLE_CYAN TERM_ESCAPE "[36m"
+#define TERM_STYLE_BRBLUE TERM_ESCAPE "[94m"
 #define TERM_STYLE_BRBLACK TERM_ESCAPE "[90m"
 
 // Status macros
-#define TERM_STATUS_NONE     0
-#define TERM_STATUS_EOF      -1
+#define TERM_STATUS_NONE 0
+#define TERM_STATUS_EOF -1
 #define TERM_STATUS_NEW_LINE -2
 
 // Keycodes
-#define TERM_DEL       0x7F
-#define TERM_EOF       0x4
+#define TERM_DEL 0x7F
+#define TERM_EOF 0x4
 #define TERM_BACKSPACE '\b'
-#define TERM_ARROW_UP  '\x1bA'
+#define TERM_ARROW_UP '\x1bA'
 
-#define TERM_PROMPT_NEW      TERM_STYLE_BOLD TERM_STYLE_BRBLUE ">>>" TERM_STYLE_RESET " "
+#define TERM_PROMPT_NEW TERM_STYLE_BOLD TERM_STYLE_BRBLUE ">>>" TERM_STYLE_RESET " "
 #define TERM_PROMPT_CONTINUE TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..." TERM_STYLE_RESET " "
 
 typedef struct {
@@ -99,7 +99,7 @@ void TerminalResetInput(Terminal *terminal);
 void TerminalMoveCursorLeft(Terminal *terminal);
 void TerminalMoveCursorRight(Terminal *terminal);
 void TerminalEnsureColumnPosition(Terminal *terminal);
-void TerminalReRenderCursorLine(Terminal* terminal);
+void TerminalReRenderCursorLine(Terminal *terminal);
 void TerminalReRenderLinesBelowCursor(Terminal *terminal);
 
 void TerminalUpdateDimension(Terminal *terminal) {
@@ -136,52 +136,52 @@ i32 TerminalInput(Terminal *terminal, Arena *arena) {
     if (num_read == 0) return false;
 
     switch (c) {
-        case TERM_EOF:
-            return TERM_STATUS_EOF;
+    case TERM_EOF:
+        return TERM_STATUS_EOF;
 
-        case '\r':
-        case '\n':
+    case '\r':
+    case '\n':
+        TerminalInsertCharAtCursor(terminal, arena, c);
+        return TERM_STATUS_NEW_LINE;
+        break;
+
+    case TERM_ESCAPE_CHAR: {
+        char buffer[2] = {0};
+        (void)read(STDIN_FILENO, buffer, 2);
+        if (buffer[0] != '[') break; // not-interesting keycode
+        switch (buffer[1]) {
+        // arrow up
+        case 'A':
+            TerminalMoveCursorUp(terminal);
+            break;
+
+        // arrow down
+        case 'B':
+            TerminalMoveCursorDown(terminal);
+            break;
+
+        // arrow left
+        case 'D':
+            TerminalMoveCursorLeft(terminal);
+            break;
+
+        // arrow right
+        case 'C':
+            TerminalMoveCursorRight(terminal);
+            break;
+        }
+    } break;
+
+    case TERM_DEL:
+    case TERM_BACKSPACE:
+        TerminalRemoveCharAtCursor(terminal, arena);
+        break;
+
+    default:
+        if ((isalnum(c) || isspace(c) || ispunct(c))) {
             TerminalInsertCharAtCursor(terminal, arena, c);
-            return TERM_STATUS_NEW_LINE;
-            break;
-
-        case TERM_ESCAPE_CHAR: {
-            char buffer[2] = {0};
-            (void)read(STDIN_FILENO, buffer, 2);
-            if (buffer[0] != '[') break; // not-interesting keycode
-            switch (buffer[1]) {
-                // arrow up
-                case 'A':
-                    TerminalMoveCursorUp(terminal);
-                    break;
-
-                // arrow down
-                case 'B':
-                    TerminalMoveCursorDown(terminal);
-                    break;
-
-                // arrow left
-                case 'D':
-                    TerminalMoveCursorLeft(terminal);
-                    break;
-
-                // arrow right
-                case 'C':
-                    TerminalMoveCursorRight(terminal);
-                    break;
-            }
-        } break;
-
-        case TERM_DEL:
-        case TERM_BACKSPACE:
-            TerminalRemoveCharAtCursor(terminal, arena);
-            break;
-
-        default:
-            if ((isalnum(c) || isspace(c) || ispunct(c))) {
-                TerminalInsertCharAtCursor(terminal, arena, c);
-            }
-            break;
+        }
+        break;
     }
 
     return true;
@@ -195,22 +195,28 @@ i32 TerminalReadLine(Terminal *terminal, Arena *arena) {
         status = TerminalInput(terminal, arena);
         TerminalRender();
         switch (status) {
-            case TERM_STATUS_EOF:
-                putc('\n', stdout);
-                return TERM_STATUS_EOF;
-                break;
+        case TERM_STATUS_EOF:
+            putc('\n', stdout);
+            return TERM_STATUS_EOF;
+            break;
 
-            case TERM_STATUS_NONE:
-                break;
+        case TERM_STATUS_NONE:
+            break;
 
-            case TERM_STATUS_NEW_LINE: {
-                u32 total_lines = StringCount(&terminal->input, '\n');
-                String last_line = StringNthLine(&terminal->input, terminal->pos.row - 1);
-                if (terminal->pos.row == total_lines && StringIsSpace(&last_line)) {
-                    goto exit;
-                }
-           }
-           break;
+        case TERM_STATUS_NEW_LINE: {
+            u32 total_lines = StringLineCount(&terminal->input);
+            String last_edited_line = StringNthLine(&terminal->input, terminal->pos.row - 1);
+            if (
+                (StringIndentationLevel(&last_edited_line) == 0 && !StringEndsWith(&last_edited_line, ':'))
+                ||
+                (terminal->pos.row + 1 >= total_lines && StringIsSpace(&last_edited_line))
+            ) {
+                TerminalClearLine();
+                TerminalRender();
+                goto exit;
+            }
+
+        }   break;
         }
     }
 exit:
@@ -223,7 +229,8 @@ void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
 }
 
 void TerminalInsertCharAtCursor(Terminal *terminal, Arena *arena, char c) {
-    u32 line_offset = StringSearchNth(&terminal->input, terminal->pos.row, '\n') + terminal->pos.col;
+    u32 line_offset =
+        StringSearchNthAddOne(&terminal->input, terminal->pos.row, '\n') + terminal->pos.col;
     String current_line = TerminalGetCursorLine(terminal);
 
     StringInsertChar(&terminal->input, arena, line_offset, c);
@@ -232,12 +239,10 @@ void TerminalInsertCharAtCursor(Terminal *terminal, Arena *arena, char c) {
     TerminalReRenderCursorLine(terminal);
     if (c == '\n') {
         u32 indentation_level = StringIndentationLevel(&current_line);
-        if (!StringIsSpace(&current_line)) {
-            if (StringGetChar(&terminal->input, line_offset - 1) == ':') {
-                indentation_level += 1;
-            }
-            StringInsertIndentation(&terminal->input, arena, line_offset + 1, indentation_level);
-        } 
+        if (line_offset != 0 && StringGetChar(&terminal->input, line_offset - 1) == ':') {
+            indentation_level += 1;
+        }
+        StringInsertIndentation(&terminal->input, arena, line_offset + 1, indentation_level);
 
         TerminalReRenderLinesBelowCursor(terminal);
         terminal->pos.row += 1;
@@ -256,7 +261,7 @@ void TerminalRemoveCharAtCursor(Terminal *terminal, Arena *arena) {
     if (StringIsEmpty(&terminal->input) || (terminal->pos.row == 0 && terminal->pos.col == 0))
         return;
 
-    u32 line_start = StringSearchNth(&terminal->input, terminal->pos.row, '\n');
+    u32 line_start = StringSearchNthAddOne(&terminal->input, terminal->pos.row, '\n');
     StringRemoveChar(&terminal->input, line_start + terminal->pos.col - 1);
 
     if (terminal->pos.col == 0) {
@@ -271,7 +276,6 @@ void TerminalRemoveCharAtCursor(Terminal *terminal, Arena *arena) {
         terminal->pos.col -= 1;
         TerminalReRenderCursorLine(terminal);
     }
-    
 }
 
 void TerminalMoveCursorUp(Terminal *terminal) {
@@ -289,15 +293,20 @@ void TerminalMoveCursorUp(Terminal *terminal) {
 
 void TerminalMoveCursorDown(Terminal *terminal) {
     u32 total_lines = StringCount(&terminal->input, '\n');
-    if (terminal->pos.row == total_lines) return;
-
-    String next_line = StringNthLine(&terminal->input, terminal->pos.row + 1);
-    u32 col = terminal->pos.col;
-    if (col > next_line.len) col = next_line.len;
-    terminal->pos.row += 1;
-    terminal->pos.col = col;
-    printf("\n");
-    TerminalEnsureColumnPosition(terminal);
+    if (terminal->pos.row != total_lines) {
+        String next_line = StringNthLine(&terminal->input, terminal->pos.row + 1);
+        u32 col = terminal->pos.col;
+        if (col > next_line.len) col = next_line.len;
+        terminal->pos.row += 1;
+        terminal->pos.col = col;
+        printf("\n");
+        TerminalEnsureColumnPosition(terminal);
+    } else {
+        // move cursor to the end of line
+        String current_line = TerminalGetCursorLine(terminal);
+        terminal->pos.col = current_line.len;
+        TerminalEnsureColumnPosition(terminal);
+    }
 }
 
 String TerminalGetCursorLine(Terminal *terminal) {
@@ -310,25 +319,13 @@ String TerminalGetPreviousLine(Terminal *terminal) {
     return StringNthLine(&terminal->input, terminal->pos.row - 1);
 }
 
-void TerminalRender(void) {
-    fflush(stdout);
-}
+void TerminalRender(void) { fflush(stdout); }
 
-void TerminalEraseUntilEnd(void) {
-    printf("%s", TERM_ERASE_UNTIL_END);
-}
-void TerminalClearLine(void) {
-    printf("%s\r", TERM_CLEAR_LINE);
-}
-void TerminalSavePosition(void) {
-    printf("%s", TERM_SAVE_POSITION);
-}
-void TerminalRestorePosition(void) {
-    printf("%s", TERM_RESTORE_POSITION);
-}
-void TerminalEnableWrapping(void) {
-    printf("%s", TERM_LINE_WRAPPING);
-}
+void TerminalEraseUntilEnd(void) { printf("%s", TERM_ERASE_UNTIL_END); }
+void TerminalClearLine(void) { printf("%s\r", TERM_CLEAR_LINE); }
+void TerminalSavePosition(void) { printf("%s", TERM_SAVE_POSITION); }
+void TerminalRestorePosition(void) { printf("%s", TERM_RESTORE_POSITION); }
+void TerminalEnableWrapping(void) { printf("%s", TERM_LINE_WRAPPING); }
 
 void TerminalResetInput(Terminal *terminal) {
     StringReset(&terminal->input);
@@ -355,18 +352,18 @@ void TerminalEnsureColumnPosition(Terminal *terminal) {
     printf("%s[%uG", TERM_ESCAPE, terminal->pos.col + 5);
 }
 
-void TerminalReRenderCursorLine(Terminal* terminal) {
-    const char* prompt = TERM_PROMPT_NEW;
+void TerminalReRenderCursorLine(Terminal *terminal) {
+    const char *prompt = TERM_PROMPT_NEW;
     if (terminal->pos.row != 0) prompt = TERM_PROMPT_CONTINUE;
-    
+
     String cursor_line = TerminalGetCursorLine(terminal);
     printf("%s\r%s%.*s", TERM_ERASE_ENTIRE_LINE, prompt, cursor_line.len, cursor_line.buffer);
     TerminalEnsureColumnPosition(terminal);
     TerminalRender();
 }
 
-void TerminalReRenderLinesBelowCursor(Terminal* terminal) {
-    const char* prompt = TERM_PROMPT_CONTINUE;
+void TerminalReRenderLinesBelowCursor(Terminal *terminal) {
+    const char *prompt = TERM_PROMPT_CONTINUE;
     u32 num_lines = StringLineCount(&terminal->input);
     u32 current_line_idx = terminal->pos.row + 1;
 
@@ -375,7 +372,7 @@ void TerminalReRenderLinesBelowCursor(Terminal* terminal) {
 
     for (; current_line_idx < num_lines; current_line_idx += 1) {
         String next_line = StringNthLine(&terminal->input, current_line_idx);
-        if (StringIsEmpty(&next_line)) break;
+        // if (StringIsEmpty(&next_line)) break;
         printf("\n%s%s%.*s", TERM_ERASE_ENTIRE_LINE, prompt, next_line.len, next_line.buffer);
     }
 

@@ -13,14 +13,13 @@ typedef struct Arena {
 Arena ArenaNew(void) {
     u32 GibiByte = 1073741824;
     u8 *ptr = mmap(0, 2 * GibiByte, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    assert(ptr && "well okay this time I can't alloc 2 gibibytes. btw it's gibibyte, not "
-                  "gigabyte. Though I don't populate the pages");
+    assert(ptr && "Failed to `mmap` 2 GibiBytes bro 😭");
     return (Arena){.ptr = ptr, .bound = 2 * GibiByte};
 }
 
 // TODO: Aligned alloc
 void* ArenaAlloc(Arena *this, u32 size) {
-    if (this->allocated + size >= this->bound) assert(false && "Arena 2GiB limit exceeded");
+    if (this->allocated + size >= this->bound) assert(false && "Arena 2GiB limit exceeded. How?");
     u8* ptr = this->ptr + this->allocated;
     this->allocated += size;
     return ptr;

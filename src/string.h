@@ -140,8 +140,18 @@ char StringPeek(String *this) {
 
 u32 StringSearchNth(String *this, u32 n, char needle) {
     u32 idx;
-    for (idx = 0; idx < this->len && n > 0; idx += 1) {
+    for (idx = 0; idx < this->len && n != 0; idx += 1) {
         if (this->buffer[idx] == needle) n -= 1;
+        if (n == 0) break;
+    }
+    return idx;
+}
+
+u32 StringSearchNthAddOne(String *this, u32 n, char needle) {
+    u32 idx = 0;
+    for (idx = 0; idx < this->len && n != 0; idx += 1) {
+        if (this->buffer[idx] == needle) n -= 1;
+        if (n == 0) return idx + 1;
     }
     return idx;
 }
@@ -240,36 +250,27 @@ u32 StringCount(String *this, char needle) {
     return count;
 }
 
-
-
-u32 StringSearchNth_TODO(String *this, u32 n, char needle) {
-    u32 idx;
-    for (idx = 0; idx < this->len && n != 0; idx += 1) {
-        if (this->buffer[idx] == needle) n -= 1;
-        if (n == 0) return idx;
-    }
-    return idx;
-}
-
+/// Returns the line count, not including
+/// empty lines
 u32 StringLineCount(String *multiline) {
     u32 num_lines = 0;
     u32 start = 0;
     while (true) {
-        u32 end = StringSearchNth_TODO(multiline, num_lines + 1, '\n');
-        if (start < end && end - start != 1) {
-            start = end;
-            num_lines += 1;
-        } else {
-            break;
-        }
+        u32 end = StringSearchNth(multiline, num_lines + 1, '\n');
+        if (start >= end || end - start <= 1) break;
+        start = end;
+        num_lines += 1;
     }
     return num_lines;
 }
 
 String StringNthLine(String *multiline, u32 n) {
-    u32 start = StringSearchNth_TODO(multiline, n, '\n');
-    if (start < multiline->len && multiline->buffer[start] == '\n' && start + 1 < multiline->len) start += 1;
-    u32 end = StringSearchNth_TODO(multiline, n + 1, '\n');
-    // if (end != 0 && StringGetChar(multiline, end) == '\n') end -= 1;
+    u32 start = StringSearchNthAddOne(multiline, n, '\n');
+    u32 end = StringSearchNth(multiline, n + 1, '\n');
     return StringSliceFromTo(multiline, start, end);
+}
+
+bool StringEndsWith(String *string, char end) {
+    if (string->len == 0) return false;
+    return string->buffer[string->len - 1] == end;
 }

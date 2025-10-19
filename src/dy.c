@@ -1,4 +1,4 @@
-// *Must* be included before standard headers
+// Python headers *must* be included before standard headers
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
@@ -9,6 +9,8 @@
 #include "core.h"
 #include "string.h"
 #include "terminal.h"
+
+thread_local int a = 10;
 
 int main(void) {
     PyStatus pystatus;
@@ -27,12 +29,8 @@ int main(void) {
     while (1) {
         TerminalStartNewLine(&terminal, &input_arena);
 
-        // read line
         i32 status = TerminalReadLine(&terminal, &input_arena);
         if (status == TERM_STATUS_EOF) break;
-
-        /* remove the new line char */
-        // StringPop(&terminal.input);
 
         PyRun_SimpleString(terminal.input.buffer);
 
