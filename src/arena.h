@@ -10,6 +10,13 @@ typedef struct Arena {
     u32 bound, allocated;
 } Arena;
 
+// typedef struct ScratchArena {
+//     Arena *arena;
+//     u8 *base;
+// } ScratchArena;
+
+// _ThreadLocal Arena scratch = {0};
+
 Arena ArenaNew(void) {
     u32 GibiByte = 1073741824;
     u8 *ptr = mmap(0, 2 * GibiByte, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -19,11 +26,19 @@ Arena ArenaNew(void) {
 
 // TODO: Aligned alloc
 void* ArenaAlloc(Arena *this, u32 size) {
+    if (this->ptr == NULL) {
+        *this = ArenaNew();
+    }
     if (this->allocated + size >= this->bound) assert(false && "Arena 2GiB limit exceeded. How?");
     u8* ptr = this->ptr + this->allocated;
     this->allocated += size;
     return ptr;
 }
+
+// ScratchArena ArenaScratch(Arena* host) {
+//     if (scratch.arena.ptr == NULL) scratch.arena = ArenaNew();
+//     u8* base = scratch.arena.ptr;
+// }
 
 void ArenaReset(Arena* this) {
     this->allocated = 0;

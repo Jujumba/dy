@@ -9,8 +9,7 @@
 #include "core.h"
 #include "string.h"
 #include "terminal.h"
-
-thread_local int a = 10;
+#include "history.h"
 
 int main(void) {
     PyStatus pystatus;
@@ -23,22 +22,28 @@ int main(void) {
         goto exception;
     }
 
-    Arena input_arena = ArenaNew();
+    Arena input_arena = {0};
+    Arena history_arena = {0};
+    ReplHistory history = {0};
     Terminal terminal = TerminalSetup();
 
     while (1) {
         TerminalStartNewLine(&terminal, &input_arena);
 
-        i32 status = TerminalReadLine(&terminal, &input_arena);
-        if (status == TERM_STATUS_EOF) break;
+        i32 status = TerminalReadLine(&terminal, &input_arena, &history_arena);
+        if (status == Eof) break;
 
         PyRun_SimpleString(terminal.input.buffer);
+
+        String copy = StringCopy(&terminal.input, &history_arena);
+        ArrayPush(&history, &history_arena, copy);
 
         ArenaReset(&input_arena);
         TerminalResetInput(&terminal);
     }
 
     ArenaFree(&input_arena);
+    ArenaFree(&history_arena);
     Py_FinalizeEx();
 
     return 0;
@@ -48,7 +53,6 @@ exception:
     if (PyStatus_IsExit(pystatus)) {
         return pystatus.exitcode;
     }
-    /* Display the error message and exit the process with
-       non-zero exit code */
+    /* display the error message and exit the process with non-zero exit code */
     Py_ExitStatusException(pystatus);
 }

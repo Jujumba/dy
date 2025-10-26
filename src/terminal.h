@@ -13,28 +13,25 @@
 #include "indentation.h"
 #include "print.h"
 #include "string.h"
+#include "history.h"
 
-#define TERM_ESCAPE "\x1b"
-#define TERM_ESCAPE_CHAR '\x1b'
-#define TERM_CLEAR_LINE TERM_ESCAPE "[2K"
-#define TERM_SAVE_POSITION TERM_ESCAPE "[s"
-#define TERM_RESTORE_POSITION TERM_ESCAPE "[u"
-#define TERM_ERASE_UNTIL_END TERM_ESCAPE "[0J"
-#define TERM_ERASE_ENTIRE_LINE TERM_ESCAPE "[2K"
-#define TERM_REQUEST_POSITION TERM_ESCAPE "[6n"
-#define TERM_LINE_WRAPPING TERM_ESCAPE "[?7l"
-#define TERM_GO_ONE_LINE_UP TERM_ESCAPE "[1A"
+#define TERM_ESCAPE             "\x1b"
+#define TERM_ESCAPE_CHAR        '\x1b'
 
-#define TERM_STYLE_RESET TERM_ESCAPE "[0m"
-#define TERM_STYLE_BOLD TERM_ESCAPE "[1m"
-#define TERM_STYLE_CYAN TERM_ESCAPE "[36m"
-#define TERM_STYLE_BRBLUE TERM_ESCAPE "[94m"
-#define TERM_STYLE_BRBLACK TERM_ESCAPE "[90m"
+#define TERM_CLEAR_LINE         TERM_ESCAPE "[2K"
+#define TERM_SAVE_POSITION      TERM_ESCAPE "[s"
+#define TERM_RESTORE_POSITION   TERM_ESCAPE "[u"
+#define TERM_ERASE_UNTIL_END    TERM_ESCAPE "[0J"
+#define TERM_ERASE_ENTIRE_LINE  TERM_ESCAPE "[2K"
+#define TERM_REQUEST_POSITION   TERM_ESCAPE "[6n"
+#define TERM_LINE_WRAPPING      TERM_ESCAPE "[?7l"
+#define TERM_GO_ONE_LINE_UP     TERM_ESCAPE "[1A"
 
-// Status macros
-#define TERM_STATUS_NONE 0
-#define TERM_STATUS_EOF -1
-#define TERM_STATUS_NEW_LINE -2
+#define TERM_STYLE_RESET        TERM_ESCAPE "[0m"
+#define TERM_STYLE_BOLD         TERM_ESCAPE "[1m"
+#define TERM_STYLE_CYAN         TERM_ESCAPE "[36m"
+#define TERM_STYLE_BRBLUE       TERM_ESCAPE "[94m"
+#define TERM_STYLE_BRBLACK      TERM_ESCAPE "[90m"
 
 // Keycodes
 #define TERM_DEL 0x7F
@@ -42,12 +39,31 @@
 #define TERM_BACKSPACE '\b'
 #define TERM_ARROW_UP '\x1bA'
 
-#define TERM_PROMPT_NEW TERM_STYLE_BOLD TERM_STYLE_BRBLUE ">>>" TERM_STYLE_RESET " "
-#define TERM_PROMPT_CONTINUE TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..." TERM_STYLE_RESET " "
+#define TERM_PROMPT_NEW         TERM_STYLE_BOLD TERM_STYLE_BRBLUE  ">>>" TERM_STYLE_RESET " "
+#define TERM_PROMPT_CONTINUE    TERM_STYLE_BOLD TERM_STYLE_BRBLACK "..." TERM_STYLE_RESET " "
 
 typedef struct {
     u32 row, col;
 } TerminalPosition;
+
+/// Special input key-codes we want to handle
+typedef enum TerminalInputStatus {
+    None = 0,
+    Eof,
+
+    /// Arrows
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    
+    /// Special key-codes
+    NewLine,
+    Backspace,
+
+    /// Alphanumeric character
+    Char,
+} TerminalInputStatus;
 
 typedef struct TerminalPositions {
     TerminalPosition *ptr;
@@ -66,6 +82,11 @@ typedef struct {
     /// Cursor position
     TerminalPosition pos;
 
+    /// REPL history
+    ReplHistory history;
+
+    /// Index offset in the REPL history array.
+    u32 history_index;
 } Terminal;
 
 /// Initialize the terminal
@@ -78,7 +99,7 @@ void TerminalUpdateDimension(Terminal *terminal);
 /// input buffer and what gets printed on the screen in sync.
 ///
 /// Returns the number of bytes read, or a negative status
-i32 TerminalInput(Terminal *terminal, Arena *arena);
+TerminalInputStatus TerminalInput(Terminal *terminal, Arena *input_arena, char* c);
 
 void TerminalStartNewLine(Terminal *terminal, Arena *arena);
 
@@ -101,6 +122,10 @@ void TerminalMoveCursorRight(Terminal *terminal);
 void TerminalEnsureColumnPosition(Terminal *terminal);
 void TerminalReRenderCursorLine(Terminal *terminal);
 void TerminalReRenderLinesBelowCursor(Terminal *terminal);
+
+void TerminalHistoryAdd(Terminal *terminal, Arena *history_arena);
+void TerminalHistoryUp(Terminal *terminal, Arena* input_arena);
+void TerminalHistoryDown(Terminal *terminal);
 
 void TerminalUpdateDimension(Terminal *terminal) {
     struct winsize window;
@@ -130,58 +155,52 @@ Terminal TerminalSetup(void) {
 }
 
 // TODO: UTF-8 support
-i32 TerminalInput(Terminal *terminal, Arena *arena) {
-    char c;
-    i32 num_read = read(STDIN_FILENO, &c, 1);
+TerminalInputStatus TerminalInput(Terminal *terminal, Arena *arena, char *c) {
+    i32 num_read = read(STDIN_FILENO, c, 1);
     if (num_read == 0) return false;
 
-    switch (c) {
+    switch (*c) {
     case TERM_EOF:
-        return TERM_STATUS_EOF;
+        return Eof;
 
-    case '\r':
+    // case '\r':
     case '\n':
-        TerminalInsertCharAtCursor(terminal, arena, c);
-        return TERM_STATUS_NEW_LINE;
-        break;
+        return NewLine;
+    break;
 
     case TERM_ESCAPE_CHAR: {
         char buffer[2] = {0};
         (void)read(STDIN_FILENO, buffer, 2);
         if (buffer[0] != '[') break; // not-interesting keycode
+        *c = buffer[1];
         switch (buffer[1]) {
         // arrow up
-        case 'A':
-            TerminalMoveCursorUp(terminal);
-            break;
+        case 'A': return ArrowUp;
 
         // arrow down
-        case 'B':
-            TerminalMoveCursorDown(terminal);
-            break;
+        case 'B': return ArrowDown;
 
         // arrow left
-        case 'D':
-            TerminalMoveCursorLeft(terminal);
-            break;
+        case 'D': return ArrowLeft;
 
         // arrow right
-        case 'C':
-            TerminalMoveCursorRight(terminal);
-            break;
+        case 'C': return ArrowRight;
         }
     } break;
 
     case TERM_DEL:
     case TERM_BACKSPACE:
-        TerminalRemoveCharAtCursor(terminal, arena);
-        break;
+        return Backspace;
+        // TerminalRemoveCharAtCursor(terminal, arena);
+        // break;
 
     default:
-        if ((isalnum(c) || isspace(c) || ispunct(c))) {
-            TerminalInsertCharAtCursor(terminal, arena, c);
+
+        if ((isalnum(*c) || isspace(*c) || ispunct(*c))) {
+            return Char;
+            // TerminalInsertCharAtCursor(terminal, arena, c);
         }
-        break;
+    break;
     }
 
     return true;
@@ -189,22 +208,48 @@ i32 TerminalInput(Terminal *terminal, Arena *arena) {
 
 // TODO: in the future this should get refactored
 //       to allow lexing and syntax highlighting
-i32 TerminalReadLine(Terminal *terminal, Arena *arena) {
-    i32 status;
+TerminalInputStatus TerminalReadLine(Terminal *terminal, Arena *input_arena, Arena *history_arena) {
+    TerminalInputStatus status;
     while (true) {
-        status = TerminalInput(terminal, arena);
-        TerminalRender();
+        char c = 0;
+        status = TerminalInput(terminal, input_arena, &c);
+        // TerminalRender();
+
+        u32 total_lines = StringLineCount(&terminal->input);
         switch (status) {
-        case TERM_STATUS_EOF:
+        case Eof:
             putc('\n', stdout);
-            return TERM_STATUS_EOF;
-            break;
+            return Eof;
+        break;
 
-        case TERM_STATUS_NONE:
-            break;
+        case None: break;
 
-        case TERM_STATUS_NEW_LINE: {
-            u32 total_lines = StringLineCount(&terminal->input);
+        case ArrowUp:
+            if (terminal->pos.row != 0) {
+                TerminalMoveCursorUp(terminal);
+            } else {
+                TerminalHistoryUp(terminal, input_arena);
+            }
+        break;
+
+        case ArrowDown:
+            if (terminal->pos.row != total_lines) {
+                TerminalMoveCursorDown(terminal);
+            } else {
+            }
+        break;
+
+        case ArrowLeft:
+            TerminalMoveCursorLeft(terminal);
+        break;
+
+        case ArrowRight:
+            TerminalMoveCursorRight(terminal);
+        break;
+
+
+        case NewLine:
+            TerminalInsertCharAtCursor(terminal, input_arena, '\n');
             String last_edited_line = StringNthLine(&terminal->input, terminal->pos.row - 1);
             if (
                 (StringIndentationLevel(&last_edited_line) == 0 && !StringEndsWith(&last_edited_line, ':'))
@@ -216,10 +261,20 @@ i32 TerminalReadLine(Terminal *terminal, Arena *arena) {
                 goto exit;
             }
 
-        }   break;
+        break;
+
+        case Backspace:
+            TerminalRemoveCharAtCursor(terminal, input_arena);
+        break;
+
+        case Char:
+            TerminalInsertCharAtCursor(terminal, input_arena, c);
+        break;
         }
+        TerminalRender();
     }
 exit:
+    TerminalHistoryAdd(terminal, history_arena);
     return status;
 }
 
@@ -265,7 +320,7 @@ void TerminalRemoveCharAtCursor(Terminal *terminal, Arena *arena) {
     StringRemoveChar(&terminal->input, line_start + terminal->pos.col - 1);
 
     if (terminal->pos.col == 0) {
-        u32 prev_line_start = StringSearchNth(&terminal->input, terminal->pos.row - 1, '\n');
+        u32 prev_line_start = StringSearchNthAddOne(&terminal->input, terminal->pos.row - 1, '\n');
         terminal->pos.col = line_start - prev_line_start - 1;
         TerminalMoveCursorUp(terminal);
         /* clear from cursor to the end of the screen */
@@ -291,6 +346,21 @@ void TerminalMoveCursorUp(Terminal *terminal) {
     TerminalEnsureColumnPosition(terminal);
 }
 
+void TerminalHistoryUp(Terminal *terminal, Arena* input_arena) {
+    if (terminal->history_index == 0 || ArrayIsEmpty(&terminal->history)) return;
+    String nth_history_input = ArrayGetNth(&terminal->history, terminal->history_index - 1);
+    terminal->input = StringCopy(&nth_history_input, input_arena);
+    terminal->history_index -= 1;
+    TerminalReRenderCursorLine(terminal);
+    TerminalReRenderLinesBelowCursor(terminal);
+}
+
+void TerminalHistoryAdd(Terminal *terminal, Arena *history_arena) {
+    String copy = StringCopy(&terminal->input, history_arena);
+    ArrayPush(&terminal->history, history_arena, copy);
+    terminal->history_index = ArrayLen(&terminal->history);
+}
+
 void TerminalMoveCursorDown(Terminal *terminal) {
     u32 total_lines = StringCount(&terminal->input, '\n');
     if (terminal->pos.row != total_lines) {
@@ -306,6 +376,12 @@ void TerminalMoveCursorDown(Terminal *terminal) {
         String current_line = TerminalGetCursorLine(terminal);
         terminal->pos.col = current_line.len;
         TerminalEnsureColumnPosition(terminal);
+    }
+}
+
+void TerminalHistoryDown(Terminal *terminal) {
+    if (ArrayIsEmpty(&terminal->history) || terminal->history_index + 1 == ArrayLen(&terminal->history)) {
+        return;
     }
 }
 
