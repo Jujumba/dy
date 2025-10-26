@@ -1,7 +1,7 @@
 CC=cc
 FSANITIZE=-fsanitize=undefined -fsanitize=address
 PYTHON3_EMBED=$(shell pkg-config --libs --cflags python3-embed)
-LIBM=$(shell pkg-config --libs --cflags m)
+LIBM=-lm
 
 debug:
 	$(CC) src/dy.c -o dy -g -Wall $(FSANITIZE) $(PYTHON3_EMBED) $(LIBM)
