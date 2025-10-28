@@ -24,9 +24,7 @@ int main(void) {
 
     Arena input_arena = {0};
     Arena history_arena = {0};
-    ReplHistory history = {0};
     Terminal terminal = TerminalSetup();
-
     while (1) {
         TerminalStartNewLine(&terminal, &input_arena);
 
@@ -35,15 +33,13 @@ int main(void) {
 
         PyRun_SimpleString(terminal.input.buffer);
 
-        String copy = StringCopy(&terminal.input, &history_arena);
-        ArrayPush(&history, &history_arena, copy);
-
         ArenaReset(&input_arena);
         TerminalResetInput(&terminal);
     }
 
-    ArenaFree(&input_arena);
-    ArenaFree(&history_arena);
+    /* we are exiting anyways; OS will reclaim pages */
+    // ArenaFree(&input_arena);
+    // ArenaFree(&history_arena);
     Py_FinalizeEx();
 
     return 0;

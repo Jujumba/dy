@@ -59,11 +59,14 @@ String StringCopy(String *this, Arena* arena);
 String GenerateIndentation(u32 indentation, Arena* arena);
 u32 StringIndentationLevel(String *this);
 void StringInsertIndentation(String *this, Arena *arena, u32 index, u32 indentation);
+String StringRightTrim(String *this);
 
 void StringAppend(String *this, Arena *arena, String *other) {
     StringEnsureAdditional(this, arena, other->len);
-    memcpy(this->buffer + this->len, other->buffer, other->len);
-    this->len += other->len;
+    if (other->len) {
+        memcpy(this->buffer + this->len, other->buffer, other->len);
+        this->len += other->len;
+    }
 }
 
 void StringAppendChar(String *this, Arena* arena, char c) {
@@ -301,4 +304,13 @@ void StringInsertIndentation(String *this, Arena *arena, u32 index, u32 indentat
             StringInsert(this, arena, index, &indentation_string);
         } break;
     }
+}
+
+String StringRightTrim(String *this) {
+    if (StringIsEmpty(this)) return (String){0};
+    
+    u32 trimmed = this->len;
+    while (trimmed > 0 && isspace(this->buffer[trimmed - 1])) trimmed -= 1;
+
+    return (String){.len = trimmed, .cap = trimmed, .buffer = this->buffer};
 }
