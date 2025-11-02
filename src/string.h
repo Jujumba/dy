@@ -2,31 +2,35 @@
 
 #include <assert.h>
 #include <ctype.h>
-#include <math.h>
 #include <memory.h>
 #include <stdbool.h>
 #include <sys/mman.h>
 
-#include "core.h"
 #include "arena.h"
+#include "core.h"
 
 #define INDENTATION1 "    "
 #define INDENTATION2 "        "
 #define INDENTATION3 "            "
 #define INDENTATION4 "                "
 
+#define S(raw)                                                                                     \
+    (String) { .buffer = raw, .len = strlen(raw), .cap = strlen(raw) }
+
 typedef struct String {
     char *buffer;
-    u32 len;
-    u32 cap;
+    u32   len;
+    u32   cap;
 } String;
 
 void StringAppend(String *this, Arena *arena, String *other);
 void StringAppendRaw(String *this, Arena *arena, char *other);
-void StringAppendChar(String *this, Arena* arena, char c);
+void StringAppendChar(String *this, Arena *arena, char c);
 void StringInsert(String *this, Arena *arena, u32 index, String *other);
 void StringInsertChar(String *this, Arena *arena, u32 index, char c);
-void StringInsertRaw(String *this, Arena *arena, u32 index, char* raw);
+void StringInsertRaw(String *this, Arena *arena, u32 index, char *raw);
+void StringNulTerminate(String *this, Arena *arena);
+void StringMemZero(String *this);
 
 char StringGetChar(String *this, u32 index);
 char StringRemoveChar(String *this, u32 index);
@@ -44,8 +48,8 @@ String StringSliceFrom(String *this, u32 from);
 String StringSliceTo(String *this, u32 to);
 String StringSliceFromTo(String *this, u32 from, u32 to);
 
-u32 StringSearchNth(String *this, u32 n, char needle);
-u32 StringSearchNthAddOne(String *this, u32 n, char needle);
+u32    StringSearchNth(String *this, u32 n, char needle);
+u32    StringSearchNthAddOne(String *this, u32 n, char needle);
 String StringNthLine(String *multiline, u32 n);
 
 u32 StringCount(String *this, char needle);
@@ -53,12 +57,22 @@ u32 StringLineCount(String *multiline);
 
 bool StringIsSpace(String *this);
 bool StringEndsWith(String *string, char end);
+bool StringIsPyTerminated(String *string);
 
-String StringCopy(String *this, Arena* arena);
+bool CharIsSpace(char c);
+bool CharIsDigit(char c);
+bool CharIsAlnum(char c);
+bool CharIsDigit(char c);
+bool CharIsPunct(char c);
+bool CharIsQuote(char c);
+bool CharIsOperator(char c);
+bool CharIsPrintable(char c);
 
-String GenerateIndentation(u32 indentation, Arena* arena);
-u32 StringIndentationLevel(String *this);
-void StringInsertIndentation(String *this, Arena *arena, u32 index, u32 indentation);
+String StringCopy(String *this, Arena *arena);
+
+String GenerateIndentation(u32 indentation, Arena *arena);
+u32    StringIndentationLevel(String *this);
+void   StringInsertIndentation(String *this, Arena *arena, u32 index, u32 indentation);
 String StringRightTrim(String *this);
 
 void StringAppend(String *this, Arena *arena, String *other) {
@@ -69,7 +83,7 @@ void StringAppend(String *this, Arena *arena, String *other) {
     }
 }
 
-void StringAppendChar(String *this, Arena* arena, char c) {
+void StringAppendChar(String *this, Arena *arena, char c) {
     StringEnsureAdditional(this, arena, 1);
     assert(this->len < this->cap);
     this->buffer[this->len] = c;
@@ -94,6 +108,7 @@ void StringInsert(String *this, Arena *arena, u32 index, String *other) {
     memmove(this->buffer + index + other->len, this->buffer + index, this->len - index);
     memcpy(this->buffer + index, other->buffer, other->len);
     this->len += other->len;
+    StringNulTerminate(this, arena);
 }
 
 void StringInsertChar(String *this, Arena *arena, u32 index, char c) {
@@ -105,10 +120,11 @@ void StringInsertChar(String *this, Arena *arena, u32 index, char c) {
     memmove(this->buffer + index + 1, this->buffer + index, this->len - index);
     this->buffer[index] = c;
     this->len += 1;
+    StringNulTerminate(this, arena);
 }
 
-void StringInsertRaw(String *this, Arena *arena, u32 index, char* raw) {
-    u32 raw_len = strlen(raw); 
+void StringInsertRaw(String *this, Arena *arena, u32 index, char *raw) {
+    u32 raw_len = strlen(raw);
     StringEnsureAdditional(this, arena, raw_len);
     if (index == this->len - 1) {
         StringAppendRaw(this, arena, raw);
@@ -117,6 +133,19 @@ void StringInsertRaw(String *this, Arena *arena, u32 index, char* raw) {
     memmove(this->buffer + index + raw_len, this->buffer + index, this->len - index);
     memcpy(this->buffer + index, raw, raw_len);
     this->len += raw_len;
+    StringNulTerminate(this, arena);
+}
+
+void StringNulTerminate(String *this, Arena *arena) {
+    StringEnsureAdditional(this, arena, 1);
+    assert(this->cap - this->len > 1);
+    this->buffer[this->len] = '\0';
+}
+
+void StringMemZero(String *this) {
+    if (this->cap) {
+        memset(this->buffer, 0, this->cap);
+    }
 }
 
 char StringGetChar(String *this, u32 index) {
@@ -145,13 +174,9 @@ char StringPop(String *this) {
     return c;
 }
 
-char StringPeek(String *this) {
-    return this->len != 0 ? this->buffer[this->len - 1] : '\0';
-}
+char StringPeek(String *this) { return this->len != 0 ? this->buffer[this->len - 1] : '\0'; }
 
-void StringClear(String *this) {
-    this->len = 0;
-}
+void StringClear(String *this) { this->len = 0; }
 
 void StringReset(String *this) {
     memset(this->buffer, 0, this->cap);
@@ -163,29 +188,28 @@ void StringEnsureAdditional(String *this, Arena *arena, u32 additional) {
     u32 remaining = this->cap - this->len;
     if (remaining >= additional) return;
 
-    u32 additional_cap = this->cap != 0 ? this->cap : 64;
-    u32 new_cap = this->cap + additional_cap;
+    u32   additional_cap = this->cap != 0 ? this->cap : 64;
+    u32   new_cap = this->cap + additional_cap;
     char *new_buffer = ArenaAlloc(arena, new_cap);
 
     if (this->len != 0 && this->buffer) {
         memcpy(new_buffer, this->buffer, this->len);
     }
 
+    StringMemZero(this);
+
     this->buffer = new_buffer;
     this->cap = new_cap;
 }
 
-bool StringIsEmpty(String *this) {
-    return this->len == 0;
-}
+bool StringIsEmpty(String *this) { return this->len == 0; }
 
-bool StringHasCapacity(String *this) {
-    return this->len < this->cap;
-}
+bool StringHasCapacity(String *this) { return this->len < this->cap; }
 
 String StringSliceFrom(String *this, u32 from) {
     assert(from <= this->len);
-    return (String){.buffer = this->buffer + from, .len = this->len - from, .cap = this->len - from};
+    return (String){
+        .buffer = this->buffer + from, .len = this->len - from, .cap = this->len - from};
 }
 
 /// Semi-open range [0, to)
@@ -260,18 +284,61 @@ bool StringEndsWith(String *string, char end) {
     return string->buffer[string->len - 1] == end;
 }
 
-String StringCopy(String *this, Arena* arena) {
+bool StringIsPyTerminated(String *string) {
+    String trimmed = StringRightTrim(string);
+    return !(StringEndsWith(&trimmed, ':') || StringEndsWith(&trimmed, '\\'));
+}
+
+bool CharIsSpace(char c) { return c == ' '; }
+
+bool CharIsDigit(char c) { return c >= '0' && c <= '9'; }
+
+bool CharIsAlnum(char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+}
+
+bool CharIsPunct(char c) {
+    char punctuations[] = {
+        ',',
+        ';',
+        '.',
+        ':',
+    };
+    for (u32 i = 0; i < sizeof(punctuations); i += 1) {
+        if (c == punctuations[i]) return true;
+    }
+    return false;
+}
+
+bool CharIsOperator(char c) {
+    char operators[] = {'+', '-', '*', '/', '&', '|', '^', '!',
+                        '%', '<', '>', '=', '(', ')', '[', ']'};
+    for (u32 i = 0; i < sizeof(operators); i += 1) {
+        if (c == operators[i]) return true;
+    }
+    return false;
+}
+
+bool CharIsQuote(char c) { return c == '\'' || c == '\"'; }
+
+bool CharIsPrintable(char c) {
+    return CharIsSpace(c) || CharIsDigit(c) || CharIsAlnum(c) || CharIsPunct(c) ||
+           CharIsOperator(c) || CharIsQuote(c);
+}
+
+String StringCopy(String *this, Arena *arena) {
     String copy = {0};
     StringAppend(&copy, arena, this);
     return copy;
 }
 
-String GenerateIndentation(u32 indentation, Arena* arena) {
-    u32 len = indentation * 4;
-    char* buffer = ArenaAlloc(arena, len);
+String GenerateIndentation(u32 indentation, Arena *arena) {
+    u32   len = indentation * 4;
+    char *buffer = ArenaAlloc(arena, len);
     // this's more readable than memset, imo
     // and any compiler will optimize this out to use memset
-    for (u32 i = 0; i < len; i += 1) buffer[i] = ' ';
+    for (u32 i = 0; i < len; i += 1)
+        buffer[i] = ' ';
     return (String){.buffer = buffer, .len = len, .cap = len};
 }
 
@@ -308,9 +375,10 @@ void StringInsertIndentation(String *this, Arena *arena, u32 index, u32 indentat
 
 String StringRightTrim(String *this) {
     if (StringIsEmpty(this)) return (String){0};
-    
+
     u32 trimmed = this->len;
-    while (trimmed > 0 && isspace(this->buffer[trimmed - 1])) trimmed -= 1;
+    while (trimmed > 0 && isspace(this->buffer[trimmed - 1]))
+        trimmed -= 1;
 
     return (String){.len = trimmed, .cap = trimmed, .buffer = this->buffer};
 }

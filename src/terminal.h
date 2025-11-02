@@ -2,7 +2,6 @@
 
 #include <assert.h>
 #include <ctype.h>
-#include <math.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <termios.h>
@@ -11,9 +10,8 @@
 #include "arena.h"
 #include "core.h"
 #include "history.h"
-#include "indentation.h"
-#include "print.h"
 #include "string.h"
+#include "token.h"
 
 #define TERM_ESCAPE      "\x1b"
 #define TERM_ESCAPE_CHAR '\x1b'
@@ -48,7 +46,7 @@ typedef struct {
 
 /// Special input key-codes we want to handle
 typedef enum TerminalInputStatus {
-    None = 0,
+    TerminalInputStatusNone = 0,
     Eof,
 
     /// Arrows
@@ -67,7 +65,7 @@ typedef enum TerminalInputStatus {
 
 typedef struct TerminalPositions {
     TerminalPosition *ptr;
-    u32 len, cap;
+    u32               len, cap;
 } TerminalPositions;
 
 typedef struct {
@@ -125,6 +123,7 @@ void TerminalResetInput(Terminal *terminal);
 
 void TerminalFlush(void);
 void TerminalRender(Terminal *terminal);
+void TerminalPrintLineHighlighted(Terminal *terminal, String *line, u32 line_idx);
 void TerminalReRenderCursorLine(Terminal *terminal);
 void TerminalReRenderLinesBelowCursor(Terminal *terminal);
 
@@ -164,65 +163,66 @@ TerminalInputStatus TerminalReadLine(Terminal *terminal, Arena *input_arena, Are
         status = TerminalInput(terminal, input_arena, &c);
 
         switch (status) {
-        case None:
-            break;
+            case 0:
+                break;
 
-        case Eof: {
-            putc('\n', stdout);
-            return Eof;
-        } break;
+            case Eof: {
+                putc('\n', stdout);
+                return Eof;
+            } break;
 
-        case ArrowUp: {
-            if (terminal->pos.row != 0) {
-                TerminalMoveCursorUpBy(terminal, 1);
-            } else if (terminal->history_index != 0 && !ArrayIsEmpty(&terminal->history)) {
-                TerminalEraseUntilEnd();
-                TerminalHistoryUp(terminal, input_arena);
-            }
-        } break;
-
-        case ArrowDown: {
-            u32 total_lines = StringCount(&terminal->input, '\n') + 1;
-            if (terminal->pos.row + 1 != total_lines) {
-                TerminalMoveCursorDownBy(terminal, 1);
-            } else if (!ArrayIsEmpty(&terminal->history) &&
-                       terminal->history_index + 1 != ArrayLen(&terminal->history)) {
-                TerminalEraseUntilEnd();
-                TerminalHistoryDown(terminal, input_arena);
-            }
-        } break;
-
-        case ArrowLeft: {
-            TerminalMoveCursorLeft(terminal);
-        } break;
-
-        case ArrowRight: {
-            TerminalMoveCursorRight(terminal);
-        } break;
-
-        case NewLine: {
-            TerminalInsertCharAtCursor(terminal, input_arena, '\n');
-            u32 total_lines = StringCount(&terminal->input, '\n') + 1;
-            String last_edited_line = StringNthLine(&terminal->input, terminal->pos.row - 1);
-            if (terminal->pos.row + 1 >= total_lines) {
-                if (StringIsSpace(&last_edited_line) ||
-                    (StringIndentationLevel(&last_edited_line) == 0 &&
-                     !StringEndsWith(&last_edited_line, ':'))) {
-                    TerminalClearLine();
-                    TerminalFlush();
-                    goto exit;
+            case ArrowUp: {
+                if (terminal->pos.row != 0) {
+                    TerminalMoveCursorUpBy(terminal, 1);
+                } else if (terminal->history_index != 0 && !ArrayIsEmpty(&terminal->history)) {
+                    TerminalEraseUntilEnd();
+                    TerminalHistoryUp(terminal, input_arena);
                 }
-            }
+            } break;
 
-        } break;
+            case ArrowDown: {
+                u32 total_lines = StringCount(&terminal->input, '\n') + 1;
+                if (terminal->pos.row + 1 != total_lines) {
+                    TerminalMoveCursorDownBy(terminal, 1);
+                } else if (!ArrayIsEmpty(&terminal->history) &&
+                           terminal->history_index + 1 != ArrayLen(&terminal->history)) {
+                    TerminalEraseUntilEnd();
+                    TerminalHistoryDown(terminal, input_arena);
+                }
+            } break;
 
-        case Backspace: {
-            TerminalRemoveCharAtCursor(terminal, input_arena);
-        } break;
+            case ArrowLeft: {
+                TerminalMoveCursorLeft(terminal);
+            } break;
 
-        case Char: {
-            TerminalInsertCharAtCursor(terminal, input_arena, c);
-        } break;
+            case ArrowRight: {
+                TerminalMoveCursorRight(terminal);
+            } break;
+
+            case NewLine: {
+                TerminalInsertCharAtCursor(terminal, input_arena, '\n');
+                u32    total_lines = StringCount(&terminal->input, '\n') + 1;
+                String last_edited_line = StringNthLine(&terminal->input, terminal->pos.row - 1);
+                assert(terminal->pos.row < total_lines);
+                if (terminal->pos.row + 1 == total_lines) {
+                    if (StringIsSpace(&last_edited_line) ||
+                        (StringIndentationLevel(&last_edited_line) == 0 &&
+                         StringIsPyTerminated(&last_edited_line))) {
+                        TerminalClearLine();
+                        TerminalFlush();
+                        goto exit;
+                    }
+                }
+
+            } break;
+
+            case Backspace: {
+                TerminalRemoveCharAtCursor(terminal, input_arena);
+            } break;
+
+            case Char: {
+                TerminalInsertCharAtCursor(terminal, input_arena, c);
+            } break;
         }
 
         /* flush after each iteration */
@@ -241,54 +241,54 @@ TerminalInputStatus TerminalInput(Terminal *terminal, Arena *arena, char *c) {
     if (num_read == 0) return false;
 
     switch (*c) {
-    case TERM_EOF:
-        return Eof;
+        case TERM_EOF:
+            return Eof;
 
-    // case '\r':
-    case '\n':
-        return NewLine;
-        break;
+        // case '\r':
+        case '\n':
+            return NewLine;
+            break;
 
-    case TERM_ESCAPE_CHAR: {
-        char buffer[2] = {0};
-        (void)read(STDIN_FILENO, buffer, 2);
-        if (buffer[0] != '[') break; // not-interesting keycode
-        *c = buffer[1];
-        switch (buffer[1]) {
-        // arrow up
-        case 'A':
-            return ArrowUp;
+        case TERM_ESCAPE_CHAR: {
+            char buffer[2] = {0};
+            (void)read(STDIN_FILENO, buffer, 2);
+            if (buffer[0] != '[') break; // not-interesting keycode
+            *c = buffer[1];
+            switch (buffer[1]) {
+                // arrow up
+                case 'A':
+                    return ArrowUp;
 
-        // arrow down
-        case 'B':
-            return ArrowDown;
+                // arrow down
+                case 'B':
+                    return ArrowDown;
 
-        // arrow left
-        case 'D':
-            return ArrowLeft;
+                // arrow left
+                case 'D':
+                    return ArrowLeft;
 
-        // arrow right
-        case 'C':
-            return ArrowRight;
+                // arrow right
+                case 'C':
+                    return ArrowRight;
+
+                default:
+                    return 0;
+            }
+        } break;
+
+        case TERM_DEL:
+        case TERM_BACKSPACE:
+            return Backspace;
 
         default:
-            return None;
-        }
-    } break;
 
-    case TERM_DEL:
-    case TERM_BACKSPACE:
-        return Backspace;
-
-    default:
-
-        if ((isalnum(*c) || isspace(*c) || ispunct(*c))) {
-            return Char;
-        }
-        break;
+            if (CharIsPrintable(*c)) {
+                return Char;
+            }
+            break;
     }
 
-    return None;
+    return 0;
 }
 
 void TerminalStartNewLine(Terminal *terminal, Arena *arena) {
@@ -353,7 +353,7 @@ void TerminalMoveCursorUpBy(Terminal *terminal, u32 by) {
     if (terminal->pos.row == 0) return;
 
     String prev_line = StringNthLine(&terminal->input, terminal->pos.row - 1);
-    u32 col = terminal->pos.col;
+    u32    col = terminal->pos.col;
     if (col > prev_line.len) col = prev_line.len;
     terminal->pos.row -= 1;
     terminal->pos.col = col;
@@ -367,7 +367,7 @@ void TerminalMoveCursorDownBy(Terminal *terminal, u32 by) {
     u32 total_lines = StringCount(&terminal->input, '\n');
     if (terminal->pos.row + by <= total_lines) {
         String next_line = StringNthLine(&terminal->input, terminal->pos.row + by);
-        u32 col = terminal->pos.col;
+        u32    col = terminal->pos.col;
         if (col > next_line.len) col = next_line.len;
         terminal->pos.row += by;
         terminal->pos.col = col;
@@ -440,7 +440,7 @@ void TerminalMoveCursorLeft(Terminal *terminal) {
 
 void TerminalMoveCursorRight(Terminal *terminal) {
     String current_line = TerminalGetCursorLine(terminal);
-    u32 next_position = terminal->pos.col + 1;
+    u32    next_position = terminal->pos.col + 1;
     if (next_position <= current_line.len) {
         printf("\x1b[C");
         terminal->pos.col = next_position;
@@ -490,11 +490,13 @@ void TerminalRender(Terminal *terminal) {
     u32 line_count = StringCount(&terminal->input, '\n') + 1;
     u32 start = 0;
     for (u32 line_idx = 0; line_idx < line_count; line_idx += 1) {
-        u32 end = StringSearchNth(&terminal->input, line_idx + 1, '\n');
+        u32    end = StringSearchNth(&terminal->input, line_idx + 1, '\n');
         String current_line = StringSliceFromTo(&terminal->input, start, end);
-        char *prompt = line_idx == 0 ? TERM_PROMPT_NEW : TERM_PROMPT_CONTINUE;
-        printf("%s\r%s%.*s\n", TERM_ERASE_ENTIRE_LINE, prompt, current_line.len,
-               current_line.buffer);
+        TerminalPrintLineHighlighted(terminal, &current_line, line_idx);
+        printf("\n");
+        // char  *prompt = line_idx == 0 ? TERM_PROMPT_NEW : TERM_PROMPT_CONTINUE;
+        // printf("%s\r%s%.*s\n", TERM_ERASE_ENTIRE_LINE, prompt, current_line.len,
+        //        current_line.buffer);
         start = end + 1;
     }
 
@@ -502,18 +504,46 @@ void TerminalRender(Terminal *terminal) {
     TerminalEnsureColumnPosition(terminal);
 }
 
-void TerminalReRenderCursorLine(Terminal *terminal) {
-    const char *prompt = TERM_PROMPT_NEW;
-    if (terminal->pos.row != 0) prompt = TERM_PROMPT_CONTINUE;
+void TerminalPrintLineHighlighted(Terminal *terminal, String *line, u32 line_idx) {
+    Token     t = {0};
+    Tokenizer tokenizer = {.input = *line};
+    printf("%s\r%s", TERM_ERASE_ENTIRE_LINE,
+           line_idx == 0 ? TERM_PROMPT_NEW : TERM_PROMPT_CONTINUE);
+    while ((t = TokenizerNext(&tokenizer)).type) {
+        switch (t.type) {
+            case TokenTypeConstant:
+            case TokenTypeNumber: {
+                printf("\x1b[94m%.*s\x1b[0m", t.s.len, t.s.buffer);
+            } break;
 
-    String cursor_line = TerminalGetCursorLine(terminal);
-    printf("%s\r%s%.*s", TERM_ERASE_ENTIRE_LINE, prompt, cursor_line.len, cursor_line.buffer);
+            case TokenTypeKeyword: {
+                printf("\x1b[1;33m%.*s\x1b[0m", t.s.len, t.s.buffer);
+            } break;
+
+            case TokenTypePunctuation:
+            case TokenTypeComment: {
+                printf("\x1b[90m%.*s\x1b[0m", t.s.len, t.s.buffer);
+            } break;
+
+            case TokenTypeString: {
+                printf("\x1b[91m%.*s\x1b[0m", t.s.len, t.s.buffer);
+            } break;
+
+            default: {
+
+                printf("%.*s", t.s.len, t.s.buffer);
+            } break;
+        }
+    }
     TerminalEnsureColumnPosition(terminal);
-    TerminalFlush();
+}
+
+void TerminalReRenderCursorLine(Terminal *terminal) {
+    String cursor_line = TerminalGetCursorLine(terminal);
+    TerminalPrintLineHighlighted(terminal, &cursor_line, terminal->pos.row);
 }
 
 void TerminalReRenderLinesBelowCursor(Terminal *terminal) {
-    const char *prompt = TERM_PROMPT_CONTINUE;
     u32 num_lines = StringCount(&terminal->input, '\n') + 1;
     u32 current_line_idx = terminal->pos.row + 1;
 
@@ -522,8 +552,9 @@ void TerminalReRenderLinesBelowCursor(Terminal *terminal) {
 
     for (; current_line_idx < num_lines; current_line_idx += 1) {
         String next_line = StringNthLine(&terminal->input, current_line_idx);
-        printf("\n%s%s%.*s", TERM_ERASE_ENTIRE_LINE, prompt, next_line.len, next_line.buffer);
+        printf("\n");
+        TerminalPrintLineHighlighted(terminal, &next_line, current_line_idx);
     }
 
-    printf("\x1b[%uF\x1b[%uG", num_lines - terminal->pos.row - 1, terminal->pos.col);
+    printf("\x1b[%uF\x1b[%uG", num_lines - terminal->pos.row - 1, terminal->pos.col + 5);
 }

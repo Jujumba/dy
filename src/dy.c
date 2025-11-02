@@ -7,9 +7,9 @@
 
 #include "arena.h"
 #include "core.h"
+#include "history.h"
 #include "string.h"
 #include "terminal.h"
-#include "history.h"
 
 int main(void) {
     PyStatus pystatus;
