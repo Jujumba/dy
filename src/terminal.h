@@ -136,7 +136,7 @@ Terminal TerminalSetup(void) {
     handle.c_lflag &= ~(ICANON | ECHO);
 
     // non blocking read
-    handle.c_cc[VMIN] = 1;
+    handle.c_cc[VMIN] = 0;
     handle.c_cc[VTIME] = 0;
 
     tcsetattr(STDIN_FILENO, TCSANOW, &handle);
@@ -174,7 +174,7 @@ TerminalInputStatus TerminalReadLine(Terminal *terminal, Arena *input_arena, Are
             case ArrowUp: {
                 if (terminal->pos.row != 0) {
                     TerminalMoveCursorUpBy(terminal, 1);
-                } else if (terminal->history_index != 0 && !ArrayIsEmpty(&terminal->history)) {
+                } else if (terminal->history_index != 0 && !(ArrayIsEmpty(&terminal->history))) {
                     TerminalEraseUntilEnd();
                     TerminalHistoryUp(terminal, input_arena);
                 }
@@ -184,7 +184,7 @@ TerminalInputStatus TerminalReadLine(Terminal *terminal, Arena *input_arena, Are
                 u32 total_lines = StringCount(&terminal->input, '\n') + 1;
                 if (terminal->pos.row + 1 != total_lines) {
                     TerminalMoveCursorDownBy(terminal, 1);
-                } else if (!ArrayIsEmpty(&terminal->history) &&
+                } else if (!(ArrayIsEmpty(&terminal->history)) &&
                            terminal->history_index + 1 != ArrayLen(&terminal->history)) {
                     TerminalEraseUntilEnd();
                     TerminalHistoryDown(terminal, input_arena);
@@ -216,13 +216,13 @@ TerminalInputStatus TerminalReadLine(Terminal *terminal, Arena *input_arena, Are
 
             } break;
 
-            case Backspace: {
+            case Backspace:
                 TerminalRemoveCharAtCursor(terminal, input_arena);
-            } break;
+                break;
 
-            case Char: {
+            case Char:
                 TerminalInsertCharAtCursor(terminal, input_arena, c);
-            } break;
+                break;
         }
 
         /* flush after each iteration */
@@ -511,16 +511,13 @@ void TerminalPrintLineHighlighted(Terminal *terminal, String *line, u32 line_idx
            line_idx == 0 ? TERM_PROMPT_NEW : TERM_PROMPT_CONTINUE);
     while ((t = TokenizerNext(&tokenizer)).type) {
         switch (t.type) {
-            case TokenTypeConstant:
+            case TokenTypeConstantTrue:
+            case TokenTypeConstantFalse:
+            case TokenTypeConstantNone:
             case TokenTypeNumber: {
                 printf("\x1b[94m%.*s\x1b[0m", t.s.len, t.s.buffer);
             } break;
 
-            case TokenTypeKeyword: {
-                printf("\x1b[1;33m%.*s\x1b[0m", t.s.len, t.s.buffer);
-            } break;
-
-            case TokenTypePunctuation:
             case TokenTypeComment: {
                 printf("\x1b[90m%.*s\x1b[0m", t.s.len, t.s.buffer);
             } break;
@@ -530,8 +527,13 @@ void TerminalPrintLineHighlighted(Terminal *terminal, String *line, u32 line_idx
             } break;
 
             default: {
-
-                printf("%.*s", t.s.len, t.s.buffer);
+                if (TokenTypeIsKeyword(t.type)) {
+                    printf("\x1b[1;33m%.*s\x1b[0m", t.s.len, t.s.buffer);
+                } else if (TokenTypeIsPunct(t.type)) {
+                    printf("\x1b[90m%.*s\x1b[0m", t.s.len, t.s.buffer);
+                } else {
+                    printf("%.*s", t.s.len, t.s.buffer);
+                }
             } break;
         }
     }

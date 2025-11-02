@@ -1,9 +1,9 @@
-#include "core.h"
-#include "arena.h"
+#pragma once
+
 #include "array.h"
 #include "string.h"
 
 typedef struct ReplHistory {
     ArrayHeader header;
-    String *buffer;
+    String     *buffer;
 } ReplHistory;

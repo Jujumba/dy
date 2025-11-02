@@ -149,6 +149,7 @@ void StringMemZero(String *this) {
 }
 
 char StringGetChar(String *this, u32 index) {
+    if (index >= this->len) return 0;
     assert(index < this->len);
     return this->buffer[index];
 }
@@ -321,10 +322,7 @@ bool CharIsOperator(char c) {
 
 bool CharIsQuote(char c) { return c == '\'' || c == '\"'; }
 
-bool CharIsPrintable(char c) {
-    return CharIsSpace(c) || CharIsDigit(c) || CharIsAlnum(c) || CharIsPunct(c) ||
-           CharIsOperator(c) || CharIsQuote(c);
-}
+bool CharIsPrintable(char c) { return c >= 32 && c <= 127; }
 
 String StringCopy(String *this, Arena *arena) {
     String copy = {0};
