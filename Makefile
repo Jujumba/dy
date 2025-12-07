@@ -1,13 +1,13 @@
 CC=cc
 FSANITIZE=-fsanitize=undefined -fsanitize=address
-PYTHON3_EMBED=$(shell pkg-config --libs --cflags python3-embed)
-LIBM=-lm
+CFLAGS= -Wall -Wno-char-subscripts
+LIBS=$(shell pkg-config --libs --cflags python3-embed) -lm
 
 debug:
-	$(CC) src/dy.c -o dy -g -Wall $(FSANITIZE) $(PYTHON3_EMBED) $(LIBM)
+	$(CC) src/dy.c -o dy -g $(CFLAGS) $(FSANITIZE) $(LIBS)
 
 release:
-	$(CC) src/dy.c -o dy -O3 -Wall $(FSANITIZE) $(PYTHON3_EMBED) $(LIBM)
+	$(CC) src/dy.c -o dy -O3 $(CFLAGS) $(FSANITIZE) $(LIBS)
 
 all:
 	debug

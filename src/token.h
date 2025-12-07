@@ -105,12 +105,12 @@ typedef enum TokenType {
 
 typedef struct Token {
     TokenType type;
-    String    s;
+    String s;
 } Token;
 
 typedef struct Tokenizer {
     String input;
-    u32    pos;
+    u32 pos;
 } Tokenizer;
 
 static char *PythonKeywords[] = {
@@ -366,10 +366,10 @@ bool TokenTypeIsKeyword(TokenType type);
 Token TokenizerNumber(Tokenizer *tokenizer);
 Token TokenizerKeywordOrIdent(Tokenizer *tokenizer);
 
-char   TokenizerPeek(Tokenizer *tokenizer);
-char   TokenizerConsume(Tokenizer *tokenizer);
+char TokenizerPeek(Tokenizer *tokenizer);
+char TokenizerConsume(Tokenizer *tokenizer);
 String TokenizerConsumeWhile(Tokenizer *tokenizer, bool (*predicate)(char));
-void   TokenizerSkipUntil(Tokenizer *tokenizer, char until);
+void TokenizerSkipUntil(Tokenizer *tokenizer, char until);
 
 bool TokenizerIsAtMultiString(Tokenizer *tokenizer);
 
@@ -378,7 +378,7 @@ Token TokenizerNext(Tokenizer *tokenizer) {
 
     if (tokenizer->pos >= tokenizer->input.len) return (Token){0};
 
-    u32  start = tokenizer->pos;
+    u32 start = tokenizer->pos;
     char current_char = TokenizerPeek(tokenizer);
     assert(current_char <= 127);
 
@@ -415,7 +415,7 @@ Token TokenizerNext(Tokenizer *tokenizer) {
         } break;
 
         case TokenTypePunctDot: {
-            if (CharIsDigit(TokenizerPeek(tokenizer))) {
+            if (tokenizer->pos < tokenizer->input.len && CharIsDigit(TokenizerPeek(tokenizer))) {
                 // return back to the consumed dot
                 // and parse number
                 tokenizer->pos -= 1;
@@ -441,7 +441,7 @@ bool TokenTypeIsPunct(TokenType type) {
 
 Token TokenizerNumber(Tokenizer *tokenizer) {
     bool is_decimal = false;
-    u32  start = tokenizer->pos, radix = 10, exponent_idx = start;
+    u32 start = tokenizer->pos, radix = 10, exponent_idx = start;
     while (tokenizer->pos < tokenizer->input.len) {
         switch (TokenizerPeek(tokenizer)) {
             case '.': {
